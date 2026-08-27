@@ -133,6 +133,8 @@ class Store {
       await sb.from('moves').insert({ ...op.row, user_id: this.user.id });
     } else if (op.table === 'moves' && op.type === 'delete') {
       await sb.from('moves').delete().eq('id', op.row.id).eq('user_id', this.user.id);
+    } else if (op.table === 'sessions' && op.type === 'delete') {
+      await sb.from('sessions').delete().eq('id', op.row.id).eq('user_id', this.user.id);
     } else if (op.table === 'sessions' && op.type === 'delete_for_move') {
       await sb.from('sessions').delete().eq('move_id', op.row.move_id).eq('user_id', this.user.id);
     } else if (op.table === 'max_tests' && op.type === 'delete_for_move') {
@@ -207,6 +209,12 @@ class Store {
     this.queue({ table: 'sessions', type: 'insert', row: { id: entry.id, move_id: moveId, reps, band, logged_at: entry.loggedAt } });
     this.emit();
     return entry;
+  }
+
+  deleteSession(sessionId) {
+    this.data.sessions = this.data.sessions.filter((s) => s.id !== sessionId);
+    this.queue({ table: 'sessions', type: 'delete', row: { id: sessionId } });
+    this.emit();
   }
 
   sessionsForMove(moveId) {

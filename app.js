@@ -565,9 +565,29 @@ function renderProgress() {
       <div class="card-title"><span class="move-icon">${moveIcon(move.name)}</span>${move.name}</div>
       ${max ? `<div class="card-sub">Baseline max: ${max.reps} reps${max.band !== 'none' ? ' · ' + BANDS[max.band].label : ''} (${fmtDate(max.testedAt)})</div>` : '<div class="card-sub">No max test yet</div>'}
       <div class="history-list">
-        ${sessions.length ? sessions.map((s) => `<div class="history-row"><span>${fmtDate(s.loggedAt)}${s.isMaxTest ? ' <span class="maxtest-badge">🏆 max</span>' : ''}</span><span>${s.reps} reps</span><span>${s.band !== 'none' ? `<span class="band-dot band-${s.band}"></span>${BANDS[s.band].label}` : ''}</span></div>`).join('') : '<div class="card-sub">No sessions logged yet</div>'}
+        ${sessions.length ? sessions.map((s) => `<div class="history-row" data-id="${s.id}">
+            <span>${fmtDate(s.loggedAt)}${s.isMaxTest ? ' <span class="maxtest-badge">🏆 max</span>' : ''}</span>
+            <span>${s.reps} reps</span>
+            <span class="history-right">${s.band !== 'none' ? `<span class="band-dot band-${s.band}"></span>${BANDS[s.band].label}` : ''}<button class="history-delete" aria-label="Delete entry">✕</button></span>
+          </div>`).join('') : '<div class="card-sub">No sessions logged yet</div>'}
       </div>
     </div>`);
+
+    section.querySelectorAll('.history-delete').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const row = btn.closest('.history-row');
+        const id = row.dataset.id;
+        const s = sessions.find((x) => x.id === id);
+        openConfirm({
+          title: 'Delete this entry?',
+          body: `Removes the ${s.reps}-rep log from ${fmtDate(s.loggedAt)} for ${move.name}. This can't be undone.`,
+          confirmLabel: 'Delete',
+          danger: true,
+          onConfirm: () => store.deleteSession(id),
+        });
+      });
+    });
+
     wrap.appendChild(section);
   }
   return wrap;

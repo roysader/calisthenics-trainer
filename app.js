@@ -1,4 +1,4 @@
-import { store, BANDS, PRESET_MOVES } from './store.js';
+import { store, BANDS, PRESET_MOVES, moveIcon } from './store.js';
 
 const $app = document.getElementById('app');
 let activeTab = 'home';
@@ -108,7 +108,7 @@ function renderMoveCard(move) {
 
   const card = el(`<div class="move-card ${status.readyToRetest ? 'ready' : ''}">
     <div class="card-title-row">
-      <div class="card-title">${move.name}</div>
+      <div class="card-title"><span class="move-icon">${moveIcon(move.name)}</span>${move.name}</div>
       <button class="card-more" aria-label="Options">⋯</button>
     </div>
     ${body}
@@ -154,7 +154,7 @@ function openAddMovePicker() {
   const options = PRESET_MOVES.filter((p) => !existingNames.has(p.name));
   const overlay = el('<div class="overlay"></div>');
   const list = options
-    .map((p) => `<button class="preset-item" data-name="${p.name}" data-assist="${p.isAssistable}">${p.name}</button>`)
+    .map((p) => `<button class="preset-item" data-name="${p.name}" data-assist="${p.isAssistable}"><span class="move-icon">${p.icon}</span>${p.name}</button>`)
     .join('');
   const modal = el(`<div class="modal picker">
     <div class="modal-header">Add a move <button class="close-btn">✕</button></div>
@@ -192,7 +192,7 @@ function renderKeypad() {
   const overlay = el('<div class="overlay keypad-overlay"></div>');
   const modal = el(`<div class="modal keypad-modal">
     <div class="modal-header">
-      ${isMaxTest ? 'Max Test: ' : ''}${move.name}
+      <span>${moveIcon(move.name)} ${isMaxTest ? 'Max Test: ' : ''}${move.name}</span>
       <button class="close-btn">✕</button>
     </div>
     ${isMaxTest ? '<div class="card-sub">Do as many clean unassisted reps as you can.</div>' : ''}
@@ -264,7 +264,7 @@ function renderActionSheet() {
   const status = store.getPlanStatus(move.id);
   const overlay = el('<div class="overlay"></div>');
   const modal = el(`<div class="modal action-sheet">
-    <div class="modal-header">${move.name} <button class="close-btn">✕</button></div>
+    <div class="modal-header"><span>${moveIcon(move.name)} ${move.name}</span> <button class="close-btn">✕</button></div>
     <div class="sheet-actions">
       <button class="sheet-btn" data-action="log">📝 Log a set</button>
       <button class="sheet-btn" data-action="maxtest">🏆 ${status.hasMaxTest ? 'Retest baseline max' : 'Set baseline max'}</button>
@@ -476,7 +476,7 @@ function renderProgress() {
     const sessions = store.sessionsForMove(move.id).slice(0, 8);
     const max = store.data.maxTests[move.id];
     const section = el(`<div class="progress-section">
-      <div class="card-title">${move.name}</div>
+      <div class="card-title"><span class="move-icon">${moveIcon(move.name)}</span>${move.name}</div>
       ${max ? `<div class="card-sub">Baseline max: ${max.reps} reps${max.band !== 'none' ? ' · ' + BANDS[max.band].label : ''} (${fmtDate(max.testedAt)})</div>` : '<div class="card-sub">No max test yet</div>'}
       <div class="history-list">
         ${sessions.length ? sessions.map((s) => `<div class="history-row"><span>${fmtDate(s.loggedAt)}${s.isMaxTest ? ' <span class="maxtest-badge">🏆 max</span>' : ''}</span><span>${s.reps} reps</span><span>${s.band !== 'none' ? `<span class="band-dot band-${s.band}"></span>${BANDS[s.band].label}` : ''}</span></div>`).join('') : '<div class="card-sub">No sessions logged yet</div>'}

@@ -10,23 +10,25 @@ export const BANDS = {
   red: { label: 'Red', kg: 30 },
 };
 
+export const DEFAULT_ICON = '💪';
+
 export const PRESET_MOVES = [
-  { name: 'Reverse Row', isAssistable: false },
-  { name: 'Dips', isAssistable: true },
-  { name: 'Wide Pull-up', isAssistable: true },
-  { name: 'Pull-up', isAssistable: true },
-  { name: 'Chin-up', isAssistable: true },
-  { name: 'Bar Pushup', isAssistable: false },
-  { name: 'Diamond Pushup', isAssistable: false },
-  { name: 'Archer Pushup', isAssistable: false },
-  { name: 'Squat', isAssistable: false },
-  { name: 'Pistol Squat', isAssistable: false },
-  { name: 'Bulgarian Split Squat', isAssistable: false },
-  { name: 'Muscle-up', isAssistable: true },
-  { name: 'Australian Row', isAssistable: false },
-  { name: 'L-sit', isAssistable: false },
-  { name: 'Plank', isAssistable: false },
-  { name: 'Handstand Pushup', isAssistable: true },
+  { name: 'Reverse Row', isAssistable: false, icon: '🚣' },
+  { name: 'Dips', isAssistable: true, icon: '🤸' },
+  { name: 'Wide Pull-up', isAssistable: true, icon: '🦍' },
+  { name: 'Pull-up', isAssistable: true, icon: '💪' },
+  { name: 'Chin-up', isAssistable: true, icon: '🙆' },
+  { name: 'Bar Pushup', isAssistable: false, icon: '🏋️' },
+  { name: 'Diamond Pushup', isAssistable: false, icon: '💎' },
+  { name: 'Archer Pushup', isAssistable: false, icon: '🏹' },
+  { name: 'Squat', isAssistable: false, icon: '🦵' },
+  { name: 'Pistol Squat', isAssistable: false, icon: '🔫' },
+  { name: 'Bulgarian Split Squat', isAssistable: false, icon: '🧍' },
+  { name: 'Muscle-up', isAssistable: true, icon: '🚀' },
+  { name: 'Australian Row', isAssistable: false, icon: '🦘' },
+  { name: 'L-sit', isAssistable: false, icon: '📐' },
+  { name: 'Plank', isAssistable: false, icon: '🪵' },
+  { name: 'Handstand Pushup', isAssistable: true, icon: '🙃' },
 ];
 
 const DEFAULT_MOVE_NAMES = ['Reverse Row', 'Dips', 'Wide Pull-up', 'Pull-up', 'Bar Pushup', 'Squat'];
@@ -43,6 +45,10 @@ function loadLocal() {
     console.error('Failed to read local data', e);
   }
   return null;
+}
+
+export function moveIcon(name) {
+  return PRESET_MOVES.find((p) => p.name === name)?.icon || DEFAULT_ICON;
 }
 
 function seedData() {

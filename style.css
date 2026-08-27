@@ -138,7 +138,20 @@ button:active { transform: scale(0.96); }
   justify-content: space-between;
   margin-bottom: 6px;
 }
-.card-title { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+.card-title { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
+.move-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--card-2);
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.preset-item { display: flex; align-items: center; gap: 10px; }
+.preset-item .move-icon { width: 30px; height: 30px; font-size: 16px; }
 .card-more {
   background: none;
   border: none;

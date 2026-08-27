@@ -1,4 +1,4 @@
-const CACHE_NAME = 'calisthenics-shell-v1';
+const CACHE_NAME = 'calisthenics-shell-v2';
 const SHELL_FILES = [
   './',
   './index.html',
@@ -30,19 +30,20 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   // Only handle same-origin app-shell requests; let Supabase/API calls pass through to the network.
   if (url.origin !== self.location.origin) return;
+  if (event.request.method !== 'GET') return;
 
+  // Network-first: always try to fetch the latest version when online, and
+  // only fall back to the cached copy when offline. This keeps the installed
+  // PWA up to date instead of permanently pinning whatever was first cached.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          if (response.ok && event.request.method === 'GET') {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

@@ -1,6 +1,6 @@
 // Fill these in after creating your free Supabase project (see README.md).
-export const SUPABASE_URL = 'YOUR_SUPABASE_URL';
-export const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+export const SUPABASE_URL = 'https://rwksapcqocodartiqcza.supabase.co';
+export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ3a3NhcGNxb2NvZGFydGlxY3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4NjA3ODMsImV4cCI6MjEwMzQzNjc4M30.A_j42RWUeINFMS2H_peltyqN4ay1nzPeJxhSXW2UFbw';
 
 export const SUPABASE_CONFIGURED =
   !SUPABASE_URL.startsWith('YOUR_') && !SUPABASE_ANON_KEY.startsWith('YOUR_');

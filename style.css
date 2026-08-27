@@ -517,6 +517,42 @@ button {
   text-align: center;
 }
 
+/* Program */
+.week-strip {
+  display: flex;
+  justify-content: space-between;
+  background: var(--bg-elevated);
+  border-radius: var(--r-lg);
+  padding: 16px 12px;
+  margin: 14px 0 12px;
+}
+.week-day { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.week-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--fill);
+  border: 1.5px solid transparent;
+}
+.week-dot.filled { background: var(--blue); }
+.week-dot.today { border-color: var(--label-secondary); }
+.week-label { font-size: 11px; color: var(--label-secondary); font-weight: 600; }
+
+.program-card .card-title { margin-bottom: 4px; }
+.program-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.program-btn {
+  padding: 13px;
+  border-radius: 999px;
+  border: none;
+  background: var(--fill);
+  color: var(--label);
+  font-size: 15px;
+  font-weight: 600;
+}
+.program-btn:active { background: var(--fill-2); }
+.program-btn.primary { background: var(--blue); color: #fff; }
+.program-btn.primary:active { opacity: 0.75; }
+
 /* Progress */
 .progress-section { background: var(--bg-elevated); border-radius: var(--r-lg); padding: 16px; margin-bottom: 12px; }
 .history-list { margin-top: 10px; display: flex; flex-direction: column; gap: 0; }

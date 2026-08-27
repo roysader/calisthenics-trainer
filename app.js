@@ -1,4 +1,4 @@
-import { store, BANDS, PRESET_MOVES, moveIcon } from './store.js';
+import { store, BANDS, PRESET_MOVES, moveIcon, FOCUS_MOVE_NAME } from './store.js';
 
 const $app = document.getElementById('app');
 let activeTab = 'home';
@@ -19,7 +19,7 @@ function fmtDate(iso) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-const TAB_TITLES = { home: 'Your Moves', timer: 'Rest Timer', progress: 'Progress' };
+const TAB_TITLES = { home: 'Your Moves', program: 'Program', timer: 'Rest Timer', progress: 'Progress' };
 
 // ---------- Rendering ----------
 function render() {
@@ -27,6 +27,7 @@ function render() {
   $app.appendChild(renderTopBar());
   const content = el('<div class="content"></div>');
   if (activeTab === 'home') content.appendChild(renderHome());
+  if (activeTab === 'program') content.appendChild(renderProgram());
   if (activeTab === 'timer') content.appendChild(renderTimer());
   if (activeTab === 'progress') content.appendChild(renderProgress());
   $app.appendChild(content);
@@ -44,6 +45,7 @@ function renderTabBar() {
   const bar = el('<nav class="tabbar"></nav>');
   for (const [key, label, icon] of [
     ['home', 'Moves', '💪'],
+    ['program', 'Program', '🎯'],
     ['timer', 'Timer', '⏱'],
     ['progress', 'Progress', '📈'],
   ]) {
@@ -123,6 +125,90 @@ function renderMoveCard(move) {
     if (!status.hasMaxTest) openKeypad(move.id, 'maxtest');
     else openKeypad(move.id, 'log');
   });
+  return card;
+}
+
+// ---------- Program (adaptive focus plan) ----------
+function renderProgram() {
+  const wrap = el('<div class="program-view"></div>');
+  const prog = store.getFocusProgram(FOCUS_MOVE_NAME);
+
+  if (prog.status === 'missing') {
+    wrap.appendChild(el(`<div class="progress-section">
+      <div class="card-title">🎯 ${FOCUS_MOVE_NAME} Focus</div>
+      <div class="card-sub">Add "${FOCUS_MOVE_NAME}" from the Moves tab to start a personalized program.</div>
+    </div>`));
+    return wrap;
+  }
+
+  wrap.appendChild(renderWeekStrip(prog.move.id));
+  wrap.appendChild(renderProgramCard(prog));
+  return wrap;
+}
+
+function renderWeekStrip(moveId) {
+  const sessions = store.sessionsForMove(moveId);
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const trained = sessions.some((s) => s.loggedAt.slice(0, 10) === key);
+    days.push({ label: d.toLocaleDateString(undefined, { weekday: 'narrow' }), trained, isToday: i === 0 });
+  }
+  const row = days
+    .map((d) => `<div class="week-day"><div class="week-dot ${d.trained ? 'filled' : ''} ${d.isToday ? 'today' : ''}"></div><div class="week-label">${d.label}</div></div>`)
+    .join('');
+  return el(`<div class="week-strip">${row}</div>`);
+}
+
+function renderProgramCard(prog) {
+  const { status, move } = prog;
+  let body = '';
+  let actions = [];
+
+  if (status === 'needs-baseline') {
+    body = `<div class="card-sub">No baseline max yet — test your max to generate a personalized target.</div>`;
+    actions = [{ label: 'Set Baseline Max', primary: true, onClick: () => openKeypad(move.id, 'maxtest') }];
+  } else if (status === 'deload') {
+    body = `<div class="card-sub">🪫 It's been 5+ weeks since your last deload — ease off this week (~50% volume) on all pulling moves, including ${move.name}.</div>`;
+    actions = [{ label: 'Mark Deload Done', primary: true, onClick: () => store.markDeload() }];
+  } else if (status === 'retest') {
+    body = `<div class="card-sub">✅ You've hit ${prog.target.reps} reps × ${prog.target.sets} sets two sessions running — time to retest your max.</div>`;
+    actions = [{ label: 'Retest Max', primary: true, onClick: () => openKeypad(move.id, 'maxtest') }];
+  } else if (status === 'trained-today') {
+    body = `<div class="card-sub">Nice work — you already trained ${move.name} today. Let it recover; rest or stick to light accessory pulling tomorrow.</div>`;
+    actions = [{ label: 'Log Another Set', primary: false, onClick: () => openKeypad(move.id, 'log') }];
+  } else if (status === 'recovery') {
+    body = `<div class="card-sub">Trained yesterday — today's a recovery day for ${move.name}.${prog.accessory ? ` If you want light volume, ${prog.accessory.name} is a good low-fatigue accessory today.` : ' Rest this move today.'}</div>`;
+    if (prog.accessory) {
+      actions = [{ label: `Log ${prog.accessory.name}`, primary: false, onClick: () => openKeypad(prog.accessory.id, 'log') }];
+    }
+  } else if (status === 'train') {
+    const daysNote = Number.isFinite(prog.daysSince) ? `Last trained ${prog.daysSince} day${prog.daysSince === 1 ? '' : 's'} ago.` : "You haven't logged this move yet.";
+    body = `
+      <div class="card-target">Target: ${prog.target.reps} reps × ${prog.target.sets} sets</div>
+      <div class="card-sub">${daysNote}</div>
+      ${prog.accessory ? `<div class="card-sub">Finish with a few sets of ${prog.accessory.name} to build supporting pull strength.</div>` : ''}`;
+    actions = [{ label: 'Log a Set', primary: true, onClick: () => openKeypad(move.id, 'log') }];
+    if (prog.accessory) {
+      actions.push({ label: `Log ${prog.accessory.name}`, primary: false, onClick: () => openKeypad(prog.accessory.id, 'log') });
+    }
+  }
+
+  const card = el(`<div class="progress-section program-card">
+    <div class="card-title">${moveIcon(move.name)} ${move.name} Focus</div>
+    ${body}
+    <div class="program-actions"></div>
+  </div>`);
+
+  const actionsWrap = card.querySelector('.program-actions');
+  for (const a of actions) {
+    const btn = el(`<button class="program-btn ${a.primary ? 'primary' : ''}">${a.label}</button>`);
+    btn.addEventListener('click', a.onClick);
+    actionsWrap.appendChild(btn);
+  }
+
   return card;
 }
 

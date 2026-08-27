@@ -33,6 +33,9 @@ export const PRESET_MOVES = [
 
 const DEFAULT_MOVE_NAMES = ['Reverse Row', 'Dips', 'Wide Pull-up', 'Pull-up', 'Bar Pushup', 'Squat'];
 
+export const FOCUS_MOVE_NAME = 'Wide Pull-up';
+const ACCESSORY_MOVE_NAMES = ['Pull-up', 'Chin-up', 'Reverse Row', 'Australian Row'];
+
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -276,6 +279,42 @@ class Store {
   needsDeload() {
     const last = this.data.settings.lastDeload || Date.now();
     return Date.now() - last > 35 * DAY_MS;
+  }
+
+  // ---- Focus program (adapts to recent training days) ----
+  getFocusProgram(moveName = FOCUS_MOVE_NAME) {
+    const move = this.data.moves.find((m) => m.name === moveName);
+    if (!move) return { status: 'missing', moveName };
+
+    if (this.needsDeload()) return { status: 'deload', move };
+
+    const status = this.getPlanStatus(move.id);
+    if (!status.hasMaxTest) return { status: 'needs-baseline', move };
+
+    if (status.readyToRetest) return { status: 'retest', move, target: status.target };
+
+    const sessions = this.sessionsForMove(move.id);
+    const last = sessions[0];
+    const daysSince = last ? Math.floor((Date.now() - new Date(last.loggedAt).getTime()) / DAY_MS) : Infinity;
+
+    const accessory = this.pickAccessory(move.id);
+
+    let action;
+    if (daysSince === 0) action = 'trained-today';
+    else if (daysSince === 1) action = 'recovery';
+    else action = 'train';
+
+    return { status: action, move, target: status.target, daysSince, accessory };
+  }
+
+  pickAccessory(excludeMoveId) {
+    const candidates = this.data.moves.filter(
+      (m) => m.id !== excludeMoveId && ACCESSORY_MOVE_NAMES.includes(m.name)
+    );
+    if (!candidates.length) return null;
+    return candidates
+      .map((m) => ({ move: m, lastAt: this.sessionsForMove(m.id)[0]?.loggedAt || null }))
+      .sort((a, b) => new Date(a.lastAt || 0) - new Date(b.lastAt || 0))[0].move;
   }
 }
 

@@ -122,6 +122,12 @@ class Store {
       await sb.from('max_tests').upsert({ ...op.row, user_id: this.user.id }, { onConflict: 'user_id,move_id' });
     } else if (op.table === 'moves' && op.type === 'insert') {
       await sb.from('moves').insert({ ...op.row, user_id: this.user.id });
+    } else if (op.table === 'moves' && op.type === 'delete') {
+      await sb.from('moves').delete().eq('id', op.row.id).eq('user_id', this.user.id);
+    } else if (op.table === 'sessions' && op.type === 'delete_for_move') {
+      await sb.from('sessions').delete().eq('move_id', op.row.move_id).eq('user_id', this.user.id);
+    } else if (op.table === 'max_tests' && op.type === 'delete_for_move') {
+      await sb.from('max_tests').delete().eq('move_id', op.row.move_id).eq('user_id', this.user.id);
     } else if (op.table === 'settings' && op.type === 'upsert') {
       await sb.from('settings').upsert({ ...op.row, user_id: this.user.id }, { onConflict: 'user_id' });
     }
@@ -166,17 +172,28 @@ class Store {
     return move;
   }
 
+  deleteMove(moveId) {
+    this.data.moves = this.data.moves.filter((m) => m.id !== moveId);
+    delete this.data.maxTests[moveId];
+    this.data.sessions = this.data.sessions.filter((s) => s.moveId !== moveId);
+    this.queue({ table: 'moves', type: 'delete', row: { id: moveId } });
+    this.queue({ table: 'sessions', type: 'delete_for_move', row: { move_id: moveId } });
+    this.queue({ table: 'max_tests', type: 'delete_for_move', row: { move_id: moveId } });
+    this.emit();
+  }
+
   // ---- Max tests ----
   setMaxTest(moveId, reps, band = 'none') {
     const testedAt = new Date().toISOString();
     this.data.maxTests[moveId] = { reps, band, testedAt };
     this.queue({ table: 'max_tests', type: 'upsert', row: { move_id: moveId, reps, band, tested_at: testedAt } });
-    this.emit();
+    // A max test is also a real set performed — log it in history too.
+    this.logSession(moveId, reps, band, { isMaxTest: true });
   }
 
   // ---- Sessions (one entry per set) ----
-  logSession(moveId, reps, band = 'none') {
-    const entry = { id: uid(), moveId, reps, band, loggedAt: new Date().toISOString() };
+  logSession(moveId, reps, band = 'none', { isMaxTest = false } = {}) {
+    const entry = { id: uid(), moveId, reps, band, loggedAt: new Date().toISOString(), isMaxTest };
     this.data.sessions.push(entry);
     this.queue({ table: 'sessions', type: 'insert', row: { id: entry.id, move_id: moveId, reps, band, logged_at: entry.loggedAt } });
     this.emit();

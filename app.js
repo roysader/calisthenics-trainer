@@ -3,6 +3,8 @@ import { store, BANDS, PRESET_MOVES } from './store.js';
 const $app = document.getElementById('app');
 let activeTab = 'home';
 let keypadState = null; // { moveId, mode: 'log' | 'maxtest', reps: '', band: 'none' }
+let actionSheetState = null; // { moveId }
+let confirmState = null; // { title, body, confirmLabel, danger, onConfirm }
 let timerState = { remaining: 90, running: false, intervalId: null };
 let audioCtx = null;
 
@@ -17,16 +19,25 @@ function fmtDate(iso) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+const TAB_TITLES = { home: 'Your Moves', timer: 'Rest Timer', progress: 'Progress' };
+
 // ---------- Rendering ----------
 function render() {
   $app.innerHTML = '';
-  $app.appendChild(renderTabBar());
+  $app.appendChild(renderTopBar());
   const content = el('<div class="content"></div>');
   if (activeTab === 'home') content.appendChild(renderHome());
   if (activeTab === 'timer') content.appendChild(renderTimer());
   if (activeTab === 'progress') content.appendChild(renderProgress());
   $app.appendChild(content);
+  $app.appendChild(renderTabBar());
   if (keypadState) $app.appendChild(renderKeypad());
+  if (actionSheetState) $app.appendChild(renderActionSheet());
+  if (confirmState) $app.appendChild(renderConfirm());
+}
+
+function renderTopBar() {
+  return el(`<header class="topbar"><h1>${TAB_TITLES[activeTab]}</h1></header>`);
 }
 
 function renderTabBar() {
@@ -82,24 +93,60 @@ function renderMoveCard(move) {
   if (!status.hasMaxTest) {
     body = `<div class="card-sub">No max test yet — tap to find your baseline</div>`;
   } else {
-    body = `<div class="card-target">Target: ${status.target.reps} reps × ${status.target.sets} sets</div>`;
+    let progressPct = 0;
+    if (recent) progressPct = Math.min(100, Math.round((recent.reps / status.target.reps) * 100));
+    body = `
+      <div class="card-target">Target: ${status.target.reps} reps × ${status.target.sets} sets</div>
+      <div class="progress-track"><div class="progress-fill" style="width:${progressPct}%"></div></div>`;
     if (recent) {
-      body += `<div class="card-sub">Last: ${recent.reps} reps${recent.band !== 'none' ? ' · ' + BANDS[recent.band].label : ''} · ${fmtDate(recent.loggedAt)}</div>`;
+      body += `<div class="card-sub">Last: ${recent.reps} reps${recent.band !== 'none' ? ` · <span class="band-dot band-${recent.band}"></span>${BANDS[recent.band].label}` : ''} · ${fmtDate(recent.loggedAt)}</div>`;
     }
     if (status.suggestion) {
       body += `<div class="card-suggestion">✅ ${status.suggestion}</div>`;
     }
   }
 
-  const card = el(`<div class="move-card">
-    <div class="card-title">${move.name}</div>
+  const card = el(`<div class="move-card ${status.readyToRetest ? 'ready' : ''}">
+    <div class="card-title-row">
+      <div class="card-title">${move.name}</div>
+      <button class="card-more" aria-label="Options">⋯</button>
+    </div>
     ${body}
   </div>`);
-  card.addEventListener('click', () => {
+
+  const openSheet = (e) => {
+    e.stopPropagation();
+    openActionSheet(move.id);
+  };
+  card.querySelector('.card-more').addEventListener('click', openSheet);
+  attachLongPress(card, () => openActionSheet(move.id), () => {
     if (!status.hasMaxTest) openKeypad(move.id, 'maxtest');
     else openKeypad(move.id, 'log');
   });
   return card;
+}
+
+function attachLongPress(target, onLongPress, onClick) {
+  let timer = null;
+  let fired = false;
+  const start = () => {
+    fired = false;
+    timer = setTimeout(() => {
+      fired = true;
+      if (navigator.vibrate) navigator.vibrate(15);
+      onLongPress();
+    }, 500);
+  };
+  const cancel = () => clearTimeout(timer);
+  target.addEventListener('pointerdown', start);
+  target.addEventListener('pointerup', cancel);
+  target.addEventListener('pointerleave', cancel);
+  target.addEventListener('pointercancel', cancel);
+  target.addEventListener('click', (e) => {
+    if (e.target.closest('.card-more')) return;
+    if (fired) { fired = false; return; }
+    onClick(e);
+  });
 }
 
 function openAddMovePicker() {
@@ -198,6 +245,86 @@ function renderKeypad() {
   });
 
   overlay.appendChild(modal);
+  return overlay;
+}
+
+// ---------- Action sheet (move options) ----------
+function openActionSheet(moveId) {
+  actionSheetState = { moveId };
+  render();
+}
+
+function closeActionSheet() {
+  actionSheetState = null;
+  render();
+}
+
+function renderActionSheet() {
+  const move = store.data.moves.find((m) => m.id === actionSheetState.moveId);
+  const status = store.getPlanStatus(move.id);
+  const overlay = el('<div class="overlay"></div>');
+  const modal = el(`<div class="modal action-sheet">
+    <div class="modal-header">${move.name} <button class="close-btn">✕</button></div>
+    <div class="sheet-actions">
+      <button class="sheet-btn" data-action="log">📝 Log a set</button>
+      <button class="sheet-btn" data-action="maxtest">🏆 ${status.hasMaxTest ? 'Retest baseline max' : 'Set baseline max'}</button>
+      <button class="sheet-btn danger" data-action="delete">🗑 Delete move</button>
+    </div>
+  </div>`);
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeActionSheet(); });
+  modal.querySelector('.close-btn').addEventListener('click', closeActionSheet);
+  modal.querySelector('[data-action="log"]').addEventListener('click', () => {
+    closeActionSheet();
+    openKeypad(move.id, 'log');
+  });
+  modal.querySelector('[data-action="maxtest"]').addEventListener('click', () => {
+    closeActionSheet();
+    openKeypad(move.id, 'maxtest');
+  });
+  modal.querySelector('[data-action="delete"]').addEventListener('click', () => {
+    closeActionSheet();
+    openConfirm({
+      title: `Delete ${move.name}?`,
+      body: 'This permanently removes this move along with its baseline max and all logged history.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: () => store.deleteMove(move.id),
+    });
+  });
+  return overlay;
+}
+
+// ---------- Confirm dialog ----------
+function openConfirm(opts) {
+  confirmState = opts;
+  render();
+}
+
+function closeConfirm() {
+  confirmState = null;
+  render();
+}
+
+function renderConfirm() {
+  const { title, body, confirmLabel = 'Confirm', danger = false } = confirmState;
+  const overlay = el('<div class="overlay confirm-overlay"></div>');
+  const modal = el(`<div class="modal confirm-modal">
+    <div class="confirm-title">${title}</div>
+    <div class="confirm-body">${body}</div>
+    <div class="confirm-actions">
+      <button class="confirm-cancel">Cancel</button>
+      <button class="confirm-ok ${danger ? 'danger' : ''}">${confirmLabel}</button>
+    </div>
+  </div>`);
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeConfirm(); });
+  modal.querySelector('.confirm-cancel').addEventListener('click', closeConfirm);
+  modal.querySelector('.confirm-ok').addEventListener('click', () => {
+    const { onConfirm } = confirmState;
+    closeConfirm();
+    onConfirm?.();
+  });
   return overlay;
 }
 
@@ -352,7 +479,7 @@ function renderProgress() {
       <div class="card-title">${move.name}</div>
       ${max ? `<div class="card-sub">Baseline max: ${max.reps} reps${max.band !== 'none' ? ' · ' + BANDS[max.band].label : ''} (${fmtDate(max.testedAt)})</div>` : '<div class="card-sub">No max test yet</div>'}
       <div class="history-list">
-        ${sessions.length ? sessions.map((s) => `<div class="history-row"><span>${fmtDate(s.loggedAt)}</span><span>${s.reps} reps</span><span>${s.band !== 'none' ? BANDS[s.band].label : ''}</span></div>`).join('') : '<div class="card-sub">No sessions logged yet</div>'}
+        ${sessions.length ? sessions.map((s) => `<div class="history-row"><span>${fmtDate(s.loggedAt)}${s.isMaxTest ? ' <span class="maxtest-badge">🏆 max</span>' : ''}</span><span>${s.reps} reps</span><span>${s.band !== 'none' ? `<span class="band-dot band-${s.band}"></span>${BANDS[s.band].label}` : ''}</span></div>`).join('') : '<div class="card-sub">No sessions logged yet</div>'}
       </div>
     </div>`);
     wrap.appendChild(section);

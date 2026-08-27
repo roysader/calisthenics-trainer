@@ -262,27 +262,27 @@ function closeActionSheet() {
 function renderActionSheet() {
   const move = store.data.moves.find((m) => m.id === actionSheetState.moveId);
   const status = store.getPlanStatus(move.id);
-  const overlay = el('<div class="overlay"></div>');
-  const modal = el(`<div class="modal action-sheet">
-    <div class="modal-header"><span>${moveIcon(move.name)} ${move.name}</span> <button class="close-btn">✕</button></div>
-    <div class="sheet-actions">
-      <button class="sheet-btn" data-action="log">📝 Log a set</button>
-      <button class="sheet-btn" data-action="maxtest">🏆 ${status.hasMaxTest ? 'Retest baseline max' : 'Set baseline max'}</button>
-      <button class="sheet-btn danger" data-action="delete">🗑 Delete move</button>
-    </div>
+  const wrap = el('<div class="sheet-wrap"></div>');
+  const group = el(`<div class="sheet-group">
+    <div class="sheet-title">${moveIcon(move.name)} ${move.name}</div>
+    <button class="sheet-row" data-action="log">Log a Set</button>
+    <button class="sheet-row" data-action="maxtest">${status.hasMaxTest ? 'Retest Baseline Max' : 'Set Baseline Max'}</button>
+    <button class="sheet-row destructive" data-action="delete">Delete Move</button>
   </div>`);
-  overlay.appendChild(modal);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeActionSheet(); });
-  modal.querySelector('.close-btn').addEventListener('click', closeActionSheet);
-  modal.querySelector('[data-action="log"]').addEventListener('click', () => {
+  const cancel = el('<button class="sheet-cancel">Cancel</button>');
+  wrap.appendChild(group);
+  wrap.appendChild(cancel);
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) closeActionSheet(); });
+  cancel.addEventListener('click', closeActionSheet);
+  group.querySelector('[data-action="log"]').addEventListener('click', () => {
     closeActionSheet();
     openKeypad(move.id, 'log');
   });
-  modal.querySelector('[data-action="maxtest"]').addEventListener('click', () => {
+  group.querySelector('[data-action="maxtest"]').addEventListener('click', () => {
     closeActionSheet();
     openKeypad(move.id, 'maxtest');
   });
-  modal.querySelector('[data-action="delete"]').addEventListener('click', () => {
+  group.querySelector('[data-action="delete"]').addEventListener('click', () => {
     closeActionSheet();
     openConfirm({
       title: `Delete ${move.name}?`,
@@ -292,7 +292,7 @@ function renderActionSheet() {
       onConfirm: () => store.deleteMove(move.id),
     });
   });
-  return overlay;
+  return wrap;
 }
 
 // ---------- Confirm dialog ----------
@@ -308,19 +308,19 @@ function closeConfirm() {
 
 function renderConfirm() {
   const { title, body, confirmLabel = 'Confirm', danger = false } = confirmState;
-  const overlay = el('<div class="overlay confirm-overlay"></div>');
-  const modal = el(`<div class="modal confirm-modal">
-    <div class="confirm-title">${title}</div>
-    <div class="confirm-body">${body}</div>
-    <div class="confirm-actions">
-      <button class="confirm-cancel">Cancel</button>
-      <button class="confirm-ok ${danger ? 'danger' : ''}">${confirmLabel}</button>
+  const overlay = el('<div class="alert-overlay"></div>');
+  const alertBox = el(`<div class="alert">
+    <div class="alert-title">${title}</div>
+    <div class="alert-body">${body}</div>
+    <div class="alert-actions">
+      <button class="alert-btn cancel">Cancel</button>
+      <button class="alert-btn bold ${danger ? 'danger' : ''}">${confirmLabel}</button>
     </div>
   </div>`);
-  overlay.appendChild(modal);
+  overlay.appendChild(alertBox);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeConfirm(); });
-  modal.querySelector('.confirm-cancel').addEventListener('click', closeConfirm);
-  modal.querySelector('.confirm-ok').addEventListener('click', () => {
+  alertBox.querySelector('.cancel').addEventListener('click', closeConfirm);
+  alertBox.querySelector('.bold').addEventListener('click', () => {
     const { onConfirm } = confirmState;
     closeConfirm();
     onConfirm?.();
@@ -330,7 +330,7 @@ function renderConfirm() {
 
 function renderBandChips() {
   const chips = Object.entries(BANDS)
-    .map(([key, b]) => `<button class="band-chip band-${key} ${keypadState.band === key ? 'active' : ''}" data-band="${key}">${b.label}${b.kg ? ` (${b.kg}kg)` : ''}</button>`)
+    .map(([key, b]) => `<button class="band-chip band-${key} ${keypadState.band === key ? 'active' : ''}" data-band="${key}"><span class="band-check">✓ </span>${b.label}${b.kg ? ` (${b.kg}kg)` : ''}</button>`)
     .join('');
   return `<div class="band-chips">${chips}</div>`;
 }

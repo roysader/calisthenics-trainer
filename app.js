@@ -7,6 +7,7 @@ let actionSheetState = null; // { moveId }
 let confirmState = null; // { title, body, confirmLabel, danger, onConfirm }
 let timerState = { remaining: 90, running: false, intervalId: null };
 let audioCtx = null;
+let dayCollapseState = {}; // dayKey -> expanded boolean, persists across re-renders
 
 function el(html) {
   const t = document.createElement('template');
@@ -70,7 +71,7 @@ function renderHome() {
   }
 
   const grid = el('<div class="move-grid"></div>');
-  for (const move of store.data.moves) {
+  for (const move of store.orderedMoves()) {
     grid.appendChild(renderMoveCard(move));
   }
   wrap.appendChild(grid);
@@ -108,7 +109,7 @@ function renderMoveCard(move) {
     }
   }
 
-  const card = el(`<div class="move-card ${status.readyToRetest ? 'ready' : ''}">
+  const card = el(`<div class="move-card ${status.readyToRetest ? 'ready' : ''}" data-move-id="${move.id}">
     <div class="card-title-row">
       <div class="card-title"><span class="move-icon">${moveIcon(move.name)}</span>${move.name}</div>
       <button class="card-more" aria-label="Options">⋯</button>
@@ -121,7 +122,7 @@ function renderMoveCard(move) {
     openActionSheet(move.id);
   };
   card.querySelector('.card-more').addEventListener('click', openSheet);
-  attachLongPress(card, () => openActionSheet(move.id), () => {
+  attachDragReorder(card, move, () => {
     if (!status.hasMaxTest) openKeypad(move.id, 'maxtest');
     else openKeypad(move.id, 'log');
   });
@@ -212,27 +213,134 @@ function renderProgramCard(prog) {
   return card;
 }
 
-function attachLongPress(target, onLongPress, onClick) {
-  let timer = null;
-  let fired = false;
-  const start = () => {
-    fired = false;
-    timer = setTimeout(() => {
-      fired = true;
-      if (navigator.vibrate) navigator.vibrate(15);
-      onLongPress();
-    }, 500);
-  };
-  const cancel = () => clearTimeout(timer);
-  target.addEventListener('pointerdown', start);
-  target.addEventListener('pointerup', cancel);
-  target.addEventListener('pointerleave', cancel);
-  target.addEventListener('pointercancel', cancel);
-  target.addEventListener('click', (e) => {
+// Hold-and-drag to reorder a move card; a quick tap (release before the hold
+// threshold, or before moving) still opens the keypad via onTap, unchanged.
+function attachDragReorder(card, move, onTap) {
+  const HOLD_MS = 320;
+  const MOVE_CANCEL_PX = 8;
+  let holdTimer = null;
+  let startX = 0;
+  let startY = 0;
+  let suppressClick = false;
+
+  function onPointerDown(e) {
     if (e.target.closest('.card-more')) return;
-    if (fired) { fired = false; return; }
-    onClick(e);
+    startX = e.clientX;
+    startY = e.clientY;
+    suppressClick = false;
+    holdTimer = setTimeout(() => beginDrag(e), HOLD_MS);
+    card.addEventListener('pointermove', onPreMove);
+    card.addEventListener('pointerup', onPreEnd, { once: true });
+    card.addEventListener('pointercancel', onPreEnd, { once: true });
+  }
+
+  function onPreMove(e) {
+    if (Math.hypot(e.clientX - startX, e.clientY - startY) > MOVE_CANCEL_PX) cleanupPre();
+  }
+
+  function onPreEnd() {
+    cleanupPre();
+  }
+
+  function cleanupPre() {
+    clearTimeout(holdTimer);
+    card.removeEventListener('pointermove', onPreMove);
+  }
+
+  function beginDrag(e) {
+    cleanupPre();
+    suppressClick = true;
+    if (navigator.vibrate) navigator.vibrate(15);
+    startDragSession(card, move, e);
+  }
+
+  card.addEventListener('pointerdown', onPointerDown);
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('.card-more')) return;
+    if (suppressClick) { suppressClick = false; return; }
+    onTap(e);
   });
+}
+
+function startDragSession(card, move, downEvent) {
+  const grid = card.parentElement;
+  const siblings = Array.from(grid.children);
+  const gapPx = parseFloat(getComputedStyle(grid).rowGap || getComputedStyle(grid).gap || '10') || 10;
+  const heights = siblings.map((sib) => sib.getBoundingClientRect().height);
+  const initialOrder = siblings.map((sib) => sib.dataset.moveId);
+  let order = initialOrder.slice();
+  const draggedId = move.id;
+
+  const slotTop = (ord, id) => {
+    let top = 0;
+    for (const otherId of ord) {
+      if (otherId === id) break;
+      const idx = initialOrder.indexOf(otherId);
+      top += heights[idx] + gapPx;
+    }
+    return top;
+  };
+  const draggedHeight = heights[initialOrder.indexOf(draggedId)];
+  const originalTop = slotTop(initialOrder, draggedId);
+
+  grid.classList.add('reordering');
+  card.classList.add('dragging');
+  try { card.setPointerCapture(downEvent.pointerId); } catch (e) {}
+
+  let latestY = downEvent.clientY;
+  let rafId = null;
+  let dragging = true;
+
+  function applyFrame() {
+    if (!dragging) return;
+    const dy = latestY - downEvent.clientY;
+    card.style.transform = `translateY(${dy}px)`;
+
+    const draggedCenter = originalTop + draggedHeight / 2 + dy;
+    const others = order.filter((id) => id !== draggedId);
+    let newIndex = others.length;
+    let running = 0;
+    for (let i = 0; i < others.length; i++) {
+      const idx = initialOrder.indexOf(others[i]);
+      const h = heights[idx];
+      if (draggedCenter < running + h / 2) { newIndex = i; break; }
+      running += h + gapPx;
+    }
+    const newOrder = others.slice();
+    newOrder.splice(newIndex, 0, draggedId);
+    if (newOrder.join() !== order.join()) {
+      order = newOrder;
+      for (const sib of siblings) {
+        const id = sib.dataset.moveId;
+        if (id === draggedId) continue;
+        const delta = slotTop(order, id) - slotTop(initialOrder, id);
+        sib.style.transform = delta ? `translateY(${delta}px)` : '';
+      }
+    }
+    rafId = requestAnimationFrame(applyFrame);
+  }
+  rafId = requestAnimationFrame(applyFrame);
+
+  function onMove(e) {
+    latestY = e.clientY;
+  }
+
+  function onEnd() {
+    dragging = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onEnd);
+    document.removeEventListener('pointercancel', onEnd);
+    grid.classList.remove('reordering');
+    card.classList.remove('dragging');
+    for (const sib of siblings) sib.style.transform = '';
+    if (order.join() !== initialOrder.join()) store.reorderMoves(order);
+    render();
+  }
+
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onEnd);
+  document.addEventListener('pointercancel', onEnd);
 }
 
 function openAddMovePicker() {
@@ -261,7 +369,9 @@ function openAddMovePicker() {
 
 // ---------- Keypad ----------
 function openKeypad(moveId, mode) {
-  keypadState = { moveId, mode, reps: '', band: 'none' };
+  const hasBaseline = !!store.data.maxTests[moveId];
+  const effectiveMode = !hasBaseline && mode === 'log' ? 'maxtest' : mode;
+  keypadState = { moveId, mode: effectiveMode, reps: '', band: 'none' };
   render();
 }
 
@@ -284,7 +394,7 @@ function renderKeypad() {
     ${isMaxTest ? '<div class="card-sub">Do as many clean unassisted reps as you can.</div>' : ''}
     ${!isMaxTest && target ? `<div class="card-target">Target: ${target.reps} reps × ${target.sets} sets</div>` : ''}
     <div class="reps-display">${keypadState.reps || '0'}</div>
-    ${move.isAssistable ? renderBandChips() : ''}
+    ${!isMaxTest && move.isAssistable ? renderBandChips() : ''}
     <div class="keypad-grid"></div>
     <div class="keypad-actions">
       <button class="kp-clear">Clear</button>
@@ -552,44 +662,78 @@ document.addEventListener(
 );
 
 // ---------- Progress ----------
+function fmtDayHeading(dayKey) {
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (dayKey === today) return 'Today';
+  if (dayKey === yesterday) return 'Yesterday';
+  const d = new Date(`${dayKey}T00:00:00Z`);
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
 function renderProgress() {
   const wrap = el('<div class="progress-view"></div>');
-  if (store.data.moves.length === 0) {
-    wrap.appendChild(el('<div class="card-sub">Add a move to start tracking progress.</div>'));
+  const days = store.groupedHistory();
+  if (days.length === 0) {
+    wrap.appendChild(el('<div class="card-sub">Log a set to start tracking progress.</div>'));
     return wrap;
   }
-  for (const move of store.data.moves) {
-    const sessions = store.sessionsForMove(move.id).slice(0, 8);
-    const max = store.data.maxTests[move.id];
-    const section = el(`<div class="progress-section">
-      <div class="card-title"><span class="move-icon">${moveIcon(move.name)}</span>${move.name}</div>
-      ${max ? `<div class="card-sub">Baseline max: ${max.reps} reps${max.band !== 'none' ? ' · ' + BANDS[max.band].label : ''} (${fmtDate(max.testedAt)})</div>` : '<div class="card-sub">No max test yet</div>'}
-      <div class="history-list">
-        ${sessions.length ? sessions.map((s) => `<div class="history-row" data-id="${s.id}">
+
+  const moveOrder = store.orderedMoves().map((m) => m.id);
+
+  days.forEach(({ day, sessions }, i) => {
+    if (!(day in dayCollapseState)) dayCollapseState[day] = i === 0;
+    const expanded = dayCollapseState[day];
+
+    const section = el(`<div class="day-section ${i % 2 === 0 ? 'even' : 'odd'} ${expanded ? 'expanded' : ''}">
+      <div class="day-header">
+        <div class="day-header-left"><span class="chevron">›</span><span class="day-title">${fmtDayHeading(day)}</span></div>
+        <span class="day-count">${sessions.length} set${sessions.length === 1 ? '' : 's'}</span>
+      </div>
+      <div class="day-body"></div>
+    </div>`);
+
+    section.querySelector('.day-header').addEventListener('click', () => {
+      dayCollapseState[day] = !dayCollapseState[day];
+      render();
+    });
+
+    const body = section.querySelector('.day-body');
+    const byMove = {};
+    for (const s of sessions) (byMove[s.moveId] = byMove[s.moveId] || []).push(s);
+    const moveIds = Object.keys(byMove).sort((a, b) => moveOrder.indexOf(a) - moveOrder.indexOf(b));
+
+    for (const moveId of moveIds) {
+      const move = store.data.moves.find((m) => m.id === moveId);
+      if (!move) continue;
+      const group = el(`<div class="move-group">
+        <div class="move-group-title"><span class="move-icon">${moveIcon(move.name)}</span>${move.name}</div>
+        <div class="history-list"></div>
+      </div>`);
+      const list = group.querySelector('.history-list');
+      for (const s of byMove[moveId]) {
+        const row = el(`<div class="history-row" data-id="${s.id}">
             <span>${fmtDate(s.loggedAt)}${s.isMaxTest ? ' <span class="maxtest-badge">🏆 max</span>' : ''}</span>
             <span>${s.reps} reps</span>
             <span class="history-right">${s.band !== 'none' ? `<span class="band-dot band-${s.band}"></span>${BANDS[s.band].label}` : ''}<button class="history-delete" aria-label="Delete entry">✕</button></span>
-          </div>`).join('') : '<div class="card-sub">No sessions logged yet</div>'}
-      </div>
-    </div>`);
-
-    section.querySelectorAll('.history-delete').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const row = btn.closest('.history-row');
-        const id = row.dataset.id;
-        const s = sessions.find((x) => x.id === id);
-        openConfirm({
-          title: 'Delete this entry?',
-          body: `Removes the ${s.reps}-rep log from ${fmtDate(s.loggedAt)} for ${move.name}. This can't be undone.`,
-          confirmLabel: 'Delete',
-          danger: true,
-          onConfirm: () => store.deleteSession(id),
+          </div>`);
+        row.querySelector('.history-delete').addEventListener('click', () => {
+          openConfirm({
+            title: 'Delete this entry?',
+            body: `Removes the ${s.reps}-rep log from ${fmtDate(s.loggedAt)} for ${move.name}. This can't be undone.`,
+            confirmLabel: 'Delete',
+            danger: true,
+            onConfirm: () => store.deleteSession(s.id),
+          });
         });
-      });
-    });
+        list.appendChild(row);
+      }
+      body.appendChild(group);
+    }
 
     wrap.appendChild(section);
-  }
+  });
+
   return wrap;
 }
 

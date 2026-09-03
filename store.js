@@ -61,6 +61,7 @@ function seedData() {
   });
   return {
     moves,
+    moveOrder: moves.map((m) => m.id),
     maxTests: {},
     sessions: [],
     settings: { restSeconds: 90, soundOn: true, vibrateOn: true, lastDeload: Date.now() },
@@ -71,6 +72,8 @@ function seedData() {
 class Store {
   constructor() {
     this.data = loadLocal() || seedData();
+    if (!this.data.moveOrder) this.data.moveOrder = this.data.moves.map((m) => m.id);
+    this.reconcileMoveOrder();
     this.user = null;
     this.listeners = new Set();
     this.persist();
@@ -171,6 +174,7 @@ class Store {
         lastDeload: settings.last_deload,
       };
     }
+    this.reconcileMoveOrder();
     this.emit();
   }
 
@@ -178,6 +182,7 @@ class Store {
   addMove(name, isAssistable) {
     const move = { id: uid(), name, isAssistable };
     this.data.moves.push(move);
+    this.reconcileMoveOrder();
     this.queue({ table: 'moves', type: 'insert', row: { id: move.id, name, is_assistable: isAssistable } });
     this.emit();
     return move;
@@ -187,9 +192,35 @@ class Store {
     this.data.moves = this.data.moves.filter((m) => m.id !== moveId);
     delete this.data.maxTests[moveId];
     this.data.sessions = this.data.sessions.filter((s) => s.moveId !== moveId);
+    this.reconcileMoveOrder();
     this.queue({ table: 'moves', type: 'delete', row: { id: moveId } });
     this.queue({ table: 'sessions', type: 'delete_for_move', row: { move_id: moveId } });
     this.queue({ table: 'max_tests', type: 'delete_for_move', row: { move_id: moveId } });
+    this.emit();
+  }
+
+  // ---- Move order (local-only display order, never synced to Supabase) ----
+  reconcileMoveOrder() {
+    const ids = new Set(this.data.moves.map((m) => m.id));
+    const order = (this.data.moveOrder || []).filter((id) => ids.has(id));
+    for (const m of this.data.moves) {
+      if (!order.includes(m.id)) order.push(m.id);
+    }
+    this.data.moveOrder = order;
+  }
+
+  orderedMoves() {
+    const byId = new Map(this.data.moves.map((m) => [m.id, m]));
+    return this.data.moveOrder.map((id) => byId.get(id)).filter(Boolean);
+  }
+
+  reorderMoves(newOrderIds) {
+    const ids = new Set(this.data.moves.map((m) => m.id));
+    if (newOrderIds.length !== ids.size || !newOrderIds.every((id) => ids.has(id))) {
+      console.error('reorderMoves: invalid order payload', newOrderIds);
+      return;
+    }
+    this.data.moveOrder = newOrderIds;
     this.emit();
   }
 
@@ -219,6 +250,21 @@ class Store {
 
   sessionsForMove(moveId) {
     return this.data.sessions.filter((s) => s.moveId === moveId).sort((a, b) => new Date(b.loggedAt) - new Date(a.loggedAt));
+  }
+
+  // Sessions bucketed by calendar day (most recent day first, most recent set first within a day).
+  groupedHistory() {
+    const byDay = {};
+    for (const s of this.data.sessions) {
+      const day = s.loggedAt.slice(0, 10);
+      (byDay[day] = byDay[day] || []).push(s);
+    }
+    return Object.keys(byDay)
+      .sort((a, b) => b.localeCompare(a))
+      .map((day) => ({
+        day,
+        sessions: byDay[day].sort((a, b) => new Date(b.loggedAt) - new Date(a.loggedAt)),
+      }));
   }
 
   // ---- Settings ----

@@ -134,10 +134,20 @@ button {
   min-height: 60px;
   position: relative;
   transition: background 0.1s ease;
+  touch-action: pan-y;
 }
 .move-card:active { background: var(--fill); }
 .move-card.ready {
   box-shadow: inset 3px 0 0 var(--green);
+}
+.move-card.dragging {
+  touch-action: none;
+  z-index: 10;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  transition: none;
+}
+.move-grid.reordering .move-card:not(.dragging) {
+  transition: transform 0.2s ease;
 }
 .card-title-row {
   display: flex;
@@ -555,6 +565,46 @@ button {
 
 /* Progress */
 .progress-section { background: var(--bg-elevated); border-radius: var(--r-lg); padding: 16px; margin-bottom: 12px; }
+
+.day-section {
+  border-radius: var(--r-lg);
+  margin: 0 0 10px;
+  overflow: hidden;
+}
+.day-section.even { background: var(--bg-elevated); }
+.day-section.odd { background: var(--fill); }
+.day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+.day-header-left { display: flex; align-items: center; gap: 8px; }
+.day-header .chevron {
+  display: inline-block;
+  color: var(--label-secondary);
+  font-size: 14px;
+  transition: transform 0.2s ease;
+}
+.day-section.expanded .day-header .chevron { transform: rotate(90deg); }
+.day-title { font-size: 15px; font-weight: 600; }
+.day-count { font-size: 12px; color: var(--label-secondary); }
+.day-body { display: none; padding: 0 16px 14px; }
+.day-section.expanded .day-body { display: block; }
+
+.move-group { margin-top: 14px; }
+.move-group:first-child { margin-top: 0; }
+.move-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.move-group-title .move-icon { width: 24px; height: 24px; font-size: 13px; border-radius: 7px; }
+
 .history-list { margin-top: 10px; display: flex; flex-direction: column; gap: 0; }
 .history-row {
   display: flex;

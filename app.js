@@ -671,6 +671,12 @@ function fmtDayHeading(dayKey) {
   return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
+function keycapEmoji(n) {
+  if (n >= 1 && n <= 9) return `${n}️⃣`;
+  if (n === 10) return '🔟';
+  return `${n}.`; // no standard keycap glyph past 10 — plain fallback
+}
+
 function renderProgress() {
   const wrap = el('<div class="progress-view"></div>');
   const days = store.groupedHistory();
@@ -730,12 +736,13 @@ function renderProgress() {
         <div class="history-list"></div>
       </div>`);
       const list = group.querySelector('.history-list');
-      moveSessions.forEach((s) => {
+      moveSessions.forEach((s, idx) => {
         const isContinuation = continuationIds.has(s.id);
         const badges = [];
         if (s.isMaxTest) badges.push('<span class="maxtest-badge">🏆 max</span>');
 
         const row = el(`<div class="history-row ${isContinuation ? 'continuation' : ''}" data-id="${s.id}">
+            <span class="history-num">${keycapEmoji(idx + 1)}</span>
             <span class="history-date">${isContinuation ? '' : fmtDate(s.loggedAt)}</span>
             <span class="history-reps">${isContinuation ? '↳ ' : ''}${s.reps} reps</span>
             <span class="history-band">${s.band !== 'none' ? `<span class="band-dot band-${s.band}"></span>${BANDS[s.band].label}` : ''}</span>

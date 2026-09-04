@@ -618,7 +618,7 @@ button {
   transition: padding-left 0.15s ease;
 }
 .history-row:last-child { border-bottom: none; padding-bottom: 0; }
-.history-row.continuation { grid-template-columns: 92px 54px 1fr auto; }
+.history-row.continuation { grid-template-columns: 78px 54px 1fr auto; }
 .history-row.day-best { box-shadow: inset 3px 0 0 var(--blue); }
 .history-reps { color: var(--label); font-weight: 600; }
 .history-meta { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }

@@ -607,16 +607,21 @@ button {
 
 .history-list { margin-top: 10px; display: flex; flex-direction: column; gap: 0; }
 .history-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 58px 54px 1fr auto;
+  column-gap: 8px;
   align-items: center;
   font-size: 13px;
   color: var(--label-secondary);
   border-bottom: 0.5px solid var(--separator);
-  padding: 7px 0;
+  padding: 7px 0 7px 6px;
+  transition: padding-left 0.15s ease;
 }
 .history-row:last-child { border-bottom: none; padding-bottom: 0; }
-.history-right { display: flex; align-items: center; gap: 6px; }
+.history-row.continuation { padding-left: 40px; }
+.history-row.day-best { box-shadow: inset 3px 0 0 var(--blue); }
+.history-reps { color: var(--label); font-weight: 600; }
+.history-meta { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .history-delete {
   background: none;
   border: none;
@@ -628,6 +633,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+  justify-self: end;
 }
 .history-delete:active { background: var(--fill); color: var(--red); }
 .maxtest-badge {
@@ -637,5 +643,12 @@ button {
   padding: 2px 6px;
   border-radius: 6px;
   font-weight: 600;
-  margin-left: 4px;
+}
+.daybest-badge {
+  font-size: 10px;
+  background: rgba(10, 132, 255, 0.15);
+  color: var(--blue);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-weight: 600;
 }

@@ -711,11 +711,24 @@ function renderProgress() {
         <div class="history-list"></div>
       </div>`);
       const list = group.querySelector('.history-list');
-      for (const s of byMove[moveId]) {
-        const row = el(`<div class="history-row" data-id="${s.id}">
-            <span>${fmtDate(s.loggedAt)}${s.isMaxTest ? ' <span class="maxtest-badge">🏆 max</span>' : ''}</span>
-            <span>${s.reps} reps</span>
-            <span class="history-right">${s.band !== 'none' ? `<span class="band-dot band-${s.band}"></span>${BANDS[s.band].label}` : ''}<button class="history-delete" aria-label="Delete entry">✕</button></span>
+      // Chronological (oldest first): the first set of the day is typically
+      // the freshest/strongest attempt, and any later set that adds a band
+      // right after an unbanded (or differently-banded) one reads as a
+      // drop-set continuation of the same working set, so it's indented.
+      const moveSessions = byMove[moveId].slice().sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt));
+      moveSessions.forEach((s, idx) => {
+        const isDayBest = idx === 0;
+        const isContinuation = idx > 0 && s.band !== 'none';
+        const meta = [];
+        if (s.isMaxTest) meta.push('<span class="maxtest-badge">🏆 max</span>');
+        if (isDayBest) meta.push('<span class="daybest-badge">★ best</span>');
+        if (s.band !== 'none') meta.push(`<span class="band-dot band-${s.band}"></span>${BANDS[s.band].label}`);
+
+        const row = el(`<div class="history-row ${isContinuation ? 'continuation' : ''} ${isDayBest ? 'day-best' : ''}" data-id="${s.id}">
+            <span class="history-date">${fmtDate(s.loggedAt)}</span>
+            <span class="history-reps">${s.reps} reps</span>
+            <span class="history-meta">${meta.join(' ')}</span>
+            <button class="history-delete" aria-label="Delete entry">✕</button>
           </div>`);
         row.querySelector('.history-delete').addEventListener('click', () => {
           openConfirm({
@@ -727,7 +740,7 @@ function renderProgress() {
           });
         });
         list.appendChild(row);
-      }
+      });
       body.appendChild(group);
     }
 

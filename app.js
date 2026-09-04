@@ -738,13 +738,10 @@ function renderProgress() {
         if (isMaxRep) badges.push('<span class="maxrep-badge">★ Max Rep</span>');
 
         const row = el(`<div class="history-row ${isContinuation ? 'continuation' : ''} ${isMaxRep ? 'day-best' : ''}" data-id="${s.id}">
-            <div class="history-daterep">
-              <span class="history-date">${isContinuation ? '' : fmtDate(s.loggedAt)}</span>
-              <span class="history-reps">${s.reps} reps</span>
-            </div>
-            <span class="history-badges">${badges.join(' ')}</span>
+            <span class="history-date">${isContinuation ? '' : fmtDate(s.loggedAt)}</span>
+            <span class="history-reps">${isContinuation ? '↳ ' : ''}${s.reps} reps</span>
             <span class="history-band">${s.band !== 'none' ? `<span class="band-dot band-${s.band}"></span>${BANDS[s.band].label}` : ''}</span>
-            <button class="history-delete" aria-label="Delete entry">✕</button>
+            <span class="history-trail">${badges.join(' ')}<button class="history-delete" aria-label="Delete entry">✕</button></span>
           </div>`);
         row.querySelector('.history-delete').addEventListener('click', () => {
           openConfirm({

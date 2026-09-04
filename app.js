@@ -703,6 +703,19 @@ function renderProgress() {
     for (const s of sessions) (byMove[s.moveId] = byMove[s.moveId] || []).push(s);
     const moveIds = Object.keys(byMove).sort((a, b) => moveOrder.indexOf(a) - moveOrder.indexOf(b));
 
+    // Continuation = a set that directly follows the same move in the TRUE
+    // global timeline for the day (across every move), and adds a band —
+    // e.g. 5 unassisted dips then 6 more with a band right after. Doing a
+    // different move in between resets it, even though both dips sets still
+    // land in the same "Dips" group below.
+    const dayAsc = sessions.slice().sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt));
+    const continuationIds = new Set();
+    for (let k = 1; k < dayAsc.length; k++) {
+      if (dayAsc[k - 1].moveId === dayAsc[k].moveId && dayAsc[k].band !== 'none') {
+        continuationIds.add(dayAsc[k].id);
+      }
+    }
+
     for (const moveId of moveIds) {
       const move = store.data.moves.find((m) => m.id === moveId);
       if (!move) continue;
@@ -711,21 +724,18 @@ function renderProgress() {
         <div class="history-list"></div>
       </div>`);
       const list = group.querySelector('.history-list');
-      // Chronological (oldest first): the first set of the day is typically
-      // the freshest/strongest attempt, and any later set that adds a band
-      // right after an unbanded (or differently-banded) one reads as a
-      // drop-set continuation of the same working set, so it's indented.
+      // Oldest first: the first set of the day is the freshest attempt (Max Rep).
       const moveSessions = byMove[moveId].slice().sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt));
       moveSessions.forEach((s, idx) => {
-        const isDayBest = idx === 0;
-        const isContinuation = idx > 0 && s.band !== 'none';
+        const isMaxRep = idx === 0;
+        const isContinuation = continuationIds.has(s.id);
         const meta = [];
         if (s.isMaxTest) meta.push('<span class="maxtest-badge">🏆 max</span>');
-        if (isDayBest) meta.push('<span class="daybest-badge">★ best</span>');
+        if (isMaxRep) meta.push('<span class="maxrep-badge">★ Max Rep</span>');
         if (s.band !== 'none') meta.push(`<span class="band-dot band-${s.band}"></span>${BANDS[s.band].label}`);
 
-        const row = el(`<div class="history-row ${isContinuation ? 'continuation' : ''} ${isDayBest ? 'day-best' : ''}" data-id="${s.id}">
-            <span class="history-date">${fmtDate(s.loggedAt)}</span>
+        const row = el(`<div class="history-row ${isContinuation ? 'continuation' : ''} ${isMaxRep ? 'day-best' : ''}" data-id="${s.id}">
+            <span class="history-date">${isContinuation ? '' : fmtDate(s.loggedAt)}</span>
             <span class="history-reps">${s.reps} reps</span>
             <span class="history-meta">${meta.join(' ')}</span>
             <button class="history-delete" aria-label="Delete entry">✕</button>

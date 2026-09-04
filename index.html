@@ -19,7 +19,21 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch((e) => console.error('SW registration failed', e));
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      // Don't wait for iOS's own (sometimes slow/throttled) update check —
+      // ask right away, and if a newer version installs, reload once
+      // automatically so the update actually takes effect this visit.
+      reg.update().catch(() => {});
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            window.location.reload();
+          }
+        });
+      });
+    }).catch((e) => console.error('SW registration failed', e));
   });
 }
 </script>

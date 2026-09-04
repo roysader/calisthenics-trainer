@@ -730,14 +730,12 @@ function renderProgress() {
         <div class="history-list"></div>
       </div>`);
       const list = group.querySelector('.history-list');
-      moveSessions.forEach((s, idx) => {
-        const isMaxRep = idx === 0;
+      moveSessions.forEach((s) => {
         const isContinuation = continuationIds.has(s.id);
         const badges = [];
         if (s.isMaxTest) badges.push('<span class="maxtest-badge">🏆 max</span>');
-        if (isMaxRep) badges.push('<span class="maxrep-badge">★ Max Rep</span>');
 
-        const row = el(`<div class="history-row ${isContinuation ? 'continuation' : ''} ${isMaxRep ? 'day-best' : ''}" data-id="${s.id}">
+        const row = el(`<div class="history-row ${isContinuation ? 'continuation' : ''}" data-id="${s.id}">
             <span class="history-date">${isContinuation ? '' : fmtDate(s.loggedAt)}</span>
             <span class="history-reps">${isContinuation ? '↳ ' : ''}${s.reps} reps</span>
             <span class="history-band">${s.band !== 'none' ? `<span class="band-dot band-${s.band}"></span>${BANDS[s.band].label}` : ''}</span>

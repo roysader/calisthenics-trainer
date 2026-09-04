@@ -719,25 +719,31 @@ function renderProgress() {
     for (const moveId of moveIds) {
       const move = store.data.moves.find((m) => m.id === moveId);
       if (!move) continue;
+      // Oldest first: the first set of the day is the freshest attempt (Max Rep).
+      const moveSessions = byMove[moveId].slice().sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt));
+      const totalReps = moveSessions.reduce((sum, s) => sum + s.reps, 0);
       const group = el(`<div class="move-group">
-        <div class="move-group-title"><span class="move-icon">${moveIcon(move.name)}</span>${move.name}</div>
+        <div class="move-group-title">
+          <span class="move-icon">${moveIcon(move.name)}</span>${move.name}
+          <span class="move-total">${totalReps} reps</span>
+        </div>
         <div class="history-list"></div>
       </div>`);
       const list = group.querySelector('.history-list');
-      // Oldest first: the first set of the day is the freshest attempt (Max Rep).
-      const moveSessions = byMove[moveId].slice().sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt));
       moveSessions.forEach((s, idx) => {
         const isMaxRep = idx === 0;
         const isContinuation = continuationIds.has(s.id);
-        const meta = [];
-        if (s.isMaxTest) meta.push('<span class="maxtest-badge">🏆 max</span>');
-        if (isMaxRep) meta.push('<span class="maxrep-badge">★ Max Rep</span>');
-        if (s.band !== 'none') meta.push(`<span class="band-dot band-${s.band}"></span>${BANDS[s.band].label}`);
+        const badges = [];
+        if (s.isMaxTest) badges.push('<span class="maxtest-badge">🏆 max</span>');
+        if (isMaxRep) badges.push('<span class="maxrep-badge">★ Max Rep</span>');
 
         const row = el(`<div class="history-row ${isContinuation ? 'continuation' : ''} ${isMaxRep ? 'day-best' : ''}" data-id="${s.id}">
-            <span class="history-date">${isContinuation ? '' : fmtDate(s.loggedAt)}</span>
-            <span class="history-reps">${s.reps} reps</span>
-            <span class="history-meta">${meta.join(' ')}</span>
+            <div class="history-daterep">
+              <span class="history-date">${isContinuation ? '' : fmtDate(s.loggedAt)}</span>
+              <span class="history-reps">${s.reps} reps</span>
+            </div>
+            <span class="history-badges">${badges.join(' ')}</span>
+            <span class="history-band">${s.band !== 'none' ? `<span class="band-dot band-${s.band}"></span>${BANDS[s.band].label}` : ''}</span>
             <button class="history-delete" aria-label="Delete entry">✕</button>
           </div>`);
         row.querySelector('.history-delete').addEventListener('click', () => {

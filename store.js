@@ -36,21 +36,9 @@ const DEFAULT_MOVE_NAMES = ['Reverse Row', 'Dips', 'Wide Pull-up', 'Pull-up', 'B
 export const FOCUS_MOVE_NAME = 'Wide Pull-up';
 const ACCESSORY_MOVE_NAMES = ['Pull-up', 'Chin-up', 'Reverse Row', 'Australian Row'];
 
-// Ordered stage names per progression chain. Matched case-insensitively,
-// exact-name only, against the user's move names — only chains fully
-// coverable by PRESET_MOVES are listed here.
-export const PROGRESSION_TREES = {
-  pullup: ['Wide Pull-up', 'Pull-up', 'Chin-up', 'Muscle-up'],
-  pushup: ['Bar Pushup', 'Diamond Pushup', 'Archer Pushup'],
-  squat: ['Squat', 'Bulgarian Split Squat', 'Pistol Squat'],
-};
-
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
-
-const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
-const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
 function loadLocal() {
   try {
@@ -78,40 +66,12 @@ function seedData() {
     sessions: [],
     settings: { restSeconds: 90, soundOn: true, vibrateOn: true, lastDeload: Date.now() },
     pendingSync: [],
-    goals: {},
   };
-}
-
-// Walks a move's chronological max-test history to derive the next max-rep
-// target: +1 rep after 3 consecutive same-band sessions meeting the target
-// (a miss just resets the streak — the target is a floor, never lowered; a
-// band change re-baselines since it's not a like-for-like comparison).
-function computeMaxForecast(maxHistory) {
-  let target = maxHistory[0].reps;
-  let band = maxHistory[0].band;
-  let streak = 0;
-  for (let i = 1; i < maxHistory.length; i++) {
-    const entry = maxHistory[i];
-    if (entry.band !== band) {
-      target = entry.reps;
-      band = entry.band;
-      streak = 0;
-      continue;
-    }
-    if (entry.reps >= target) {
-      streak += 1;
-      if (streak >= 3) { target += 1; streak = 0; }
-    } else {
-      streak = 0;
-    }
-  }
-  return { target, band, streak };
 }
 
 class Store {
   constructor() {
     this.data = loadLocal() || seedData();
-    if (!this.data.goals) this.data.goals = {};
     if (!this.data.moveOrder) this.data.moveOrder = this.data.moves.map((m) => m.id);
     this.reconcileMoveOrder();
     this.user = null;
@@ -273,19 +233,6 @@ class Store {
     this.logSession(moveId, reps, band, { isMaxTest: true });
   }
 
-  // Single entry point for saving a logged set from the keypad.
-  // - forceMaxTest=true is used for the manual "Retest max instead" link and
-  //   the forced no-baseline flow (both already resolve isMaxTest=true).
-  // - Otherwise, if this is the first set logged for this move today, it's
-  //   automatically treated as today's max-effort set (your first rep/set of
-  //   a session is your daily max), which updates data.maxTests[moveId].
-  // - Once a set has been logged today, later sets for that move that day go
-  //   through the normal logSession path and never re-overwrite today's max.
-  logSet(moveId, reps, band = 'none', { forceMaxTest = false } = {}) {
-    const autoMaxTest = forceMaxTest || !this.hasLoggedToday(moveId);
-    return autoMaxTest ? this.setMaxTest(moveId, reps, band) : this.logSession(moveId, reps, band);
-  }
-
   // ---- Sessions (one entry per set) ----
   logSession(moveId, reps, band = 'none', { isMaxTest = false } = {}) {
     const entry = { id: uid(), moveId, reps, band, loggedAt: new Date().toISOString(), isMaxTest };
@@ -303,13 +250,6 @@ class Store {
 
   sessionsForMove(moveId) {
     return this.data.sessions.filter((s) => s.moveId === moveId).sort((a, b) => new Date(b.loggedAt) - new Date(a.loggedAt));
-  }
-
-  // Has this move already had a set logged today? (per-move-per-day, using
-  // the loggedAt.slice(0,10) day-key convention used elsewhere in this file)
-  hasLoggedToday(moveId) {
-    const today = new Date().toISOString().slice(0, 10);
-    return this.data.sessions.some((s) => s.moveId === moveId && s.loggedAt.slice(0, 10) === today);
   }
 
   // Sessions bucketed by calendar day (most recent day first, most recent set first within a day).
@@ -356,28 +296,6 @@ class Store {
     return { reps, sets, basedOnBand: max.band };
   }
 
-  // Recent-performance-based advice for the working-set target: increase,
-  // hold, or ease off — as opposed to getTarget's fixed 75%-of-max ratio.
-  getTrendAdvice(moveId) {
-    const target = this.getTarget(moveId);
-    if (!target) return null;
-    const sessions = this.sessionsForMove(moveId).filter((s) => s.band === target.basedOnBand);
-    if (sessions.length < 2) return null;
-    const last3 = sessions.slice(0, 3);
-    if (last3.length === 3 && last3.every((s) => s.reps >= target.reps)) {
-      return { level: 'increase', text: `Progressing consistently — try ${target.reps + 1} reps next session.` };
-    }
-    if (sessions.length >= 4) {
-      const recentAvg = avg(sessions.slice(0, 2).map((s) => s.reps));
-      const priorAvg = avg(sessions.slice(2, 4).map((s) => s.reps));
-      if (priorAvg > 0 && recentAvg <= priorAvg * 0.85) {
-        const pct = Math.round((1 - recentAvg / priorAvg) * 100);
-        return { level: 'deload', text: `Performance dropped ${pct}% — maintain volume this session.` };
-      }
-    }
-    return { level: 'hold', text: `On track — hold at ${target.reps} reps × ${target.sets} sets.` };
-  }
-
   getPlanStatus(moveId) {
     const move = this.data.moves.find((m) => m.id === moveId);
     const target = this.getTarget(moveId);
@@ -410,103 +328,6 @@ class Store {
     }
 
     return { hasMaxTest: true, target, readyToRetest, suggestion };
-  }
-
-  // Last session's max + a forecasted next max-rep target (see computeMaxForecast).
-  getSessionForecast(moveId) {
-    const status = this.getPlanStatus(moveId);
-    if (!status.hasMaxTest) return { hasMaxTest: false };
-    const maxHistory = this.sessionsForMove(moveId)
-      .filter((s) => s.isMaxTest)
-      .sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt));
-    const last = maxHistory[maxHistory.length - 1];
-    const { target: nextMaxTarget, band: nextMaxBand, streak } = computeMaxForecast(maxHistory);
-    return {
-      hasMaxTest: true,
-      last: { reps: last.reps, band: last.band, loggedAt: last.loggedAt },
-      nextMaxTarget,
-      nextMaxBand,
-      streak,
-      sessionsUntilBump: 3 - streak,
-      workingTarget: status.target,
-      readyToRetest: status.readyToRetest,
-      suggestion: status.suggestion,
-    };
-  }
-
-  // Progression-chain status for a move (see PROGRESSION_TREES): whether the
-  // user is ready to advance to the next stage, reusing getPlanStatus's
-  // readyToRetest as the "mastered this stage" signal.
-  getProgressionStatus(moveId) {
-    const move = this.data.moves.find((m) => m.id === moveId);
-    if (!move) return null;
-    const chainKey = Object.keys(PROGRESSION_TREES).find((k) =>
-      PROGRESSION_TREES[k].some((name) => name.toLowerCase() === move.name.toLowerCase()));
-    if (!chainKey) return null;
-    const chain = PROGRESSION_TREES[chainKey];
-    const idx = chain.findIndex((name) => name.toLowerCase() === move.name.toLowerCase());
-    const nextName = chain[idx + 1];
-    if (!nextName) return { chain, idx, nextName: null };
-    const nextExists = this.data.moves.some((m) => m.name.toLowerCase() === nextName.toLowerCase());
-    const status = this.getPlanStatus(moveId);
-    const readyToAdvance = !!status.readyToRetest && !nextExists;
-    return { chain, idx, nextName, nextExists, readyToAdvance };
-  }
-
-  // Composite 0-100 performance score (strength/volume/consistency) plus a
-  // plain-language explanation of the week-over-week trend driving it.
-  getPerformanceScore(moveId) {
-    const maxTests = this.sessionsForMove(moveId)
-      .filter((s) => s.isMaxTest)
-      .sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt));
-    let strength = 20;
-    if (maxTests.length >= 2) {
-      const pct = clamp((maxTests[maxTests.length - 1].reps - maxTests[0].reps) / Math.max(maxTests[0].reps, 1), 0, 0.5);
-      strength = clamp(pct * 80, 0, 40);
-    }
-    const sessions = this.sessionsForMove(moveId);
-    const now = Date.now();
-    const repsInWindow = (startDaysAgo, endDaysAgo) => sessions
-      .filter((s) => { const age = (now - new Date(s.loggedAt)) / DAY_MS; return age >= endDaysAgo && age < startDaysAgo; })
-      .reduce((sum, s) => sum + s.reps, 0);
-    const thisWeek = repsInWindow(7, 0);
-    const lastWeek = repsInWindow(14, 7);
-    const volumeGrowth = clamp((thisWeek - lastWeek) / Math.max(lastWeek, 1), -0.5, 0.5);
-    const volume = lastWeek === 0 && thisWeek === 0 ? 15 : 15 + volumeGrowth * 30;
-    const days28 = sessions.filter((s) => (now - new Date(s.loggedAt)) / DAY_MS < 28);
-    const consistency = clamp((days28.length / 4 / 3) * 30, 0, 30);
-    const score = Math.round(clamp(strength + volume + consistency, 0, 100));
-    const trend = volumeGrowth > 0.05 ? 'up' : volumeGrowth < -0.05 ? 'down' : 'flat';
-    return {
-      score,
-      trend,
-      trendPct: Math.round(volumeGrowth * 100),
-      explanation: `${trend === 'up' ? 'Improved' : trend === 'down' ? 'Declined' : 'Held steady'} ${Math.abs(Math.round(volumeGrowth * 100))}% this week — weekly volume went from ${lastWeek} to ${thisWeek} reps.`,
-    };
-  }
-
-  // ---- Goals (local-only, not synced to Supabase) ----
-  setGoal(moveId, targetReps) {
-    this.data.goals[moveId] = { targetReps, setAt: new Date().toISOString() };
-    this.emit();
-  }
-
-  getGoalForecast(moveId) {
-    const goal = this.data.goals[moveId];
-    if (!goal) return null;
-    const maxTests = this.sessionsForMove(moveId)
-      .filter((s) => s.isMaxTest)
-      .sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt));
-    const latestReps = maxTests[maxTests.length - 1]?.reps ?? 0;
-    if (latestReps >= goal.targetReps) return { status: 'met', latestReps, target: goal.targetReps };
-    if (maxTests.length < 2) return { status: 'insufficient-history', latestReps, target: goal.targetReps };
-    const first = maxTests[0];
-    const last = maxTests[maxTests.length - 1];
-    const weeksSpan = Math.max((new Date(last.loggedAt) - new Date(first.loggedAt)) / (7 * DAY_MS), 1);
-    const repsPerWeek = (last.reps - first.reps) / weeksSpan;
-    if (repsPerWeek <= 0) return { status: 'no-progress', latestReps, target: goal.targetReps };
-    const weeksToGoal = Math.ceil((goal.targetReps - latestReps) / repsPerWeek);
-    return { status: 'on-track', latestReps, target: goal.targetReps, repsPerWeek: Math.round(repsPerWeek * 10) / 10, weeksToGoal };
   }
 
   needsDeload() {

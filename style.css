@@ -181,32 +181,6 @@ button {
 .card-sub { font-size: 13px; color: var(--label-secondary); margin-top: 6px; display: flex; align-items: center; gap: 5px; }
 .card-target { font-size: 14px; color: var(--blue); font-weight: 590; }
 .card-suggestion { font-size: 13px; color: var(--green); margin-top: 6px; font-weight: 590; }
-.card-forecast { font-size: 13px; color: var(--blue); margin-top: 6px; font-weight: 590; }
-.card-trend { font-size: 13px; margin-top: 6px; font-weight: 590; }
-.card-trend-increase { color: var(--green); }
-.card-trend-hold { color: var(--label-secondary); }
-.card-trend-deload { color: var(--orange); }
-.add-next-stage {
-  background: var(--green);
-  color: #04240a;
-  border: none;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 3px 8px;
-  margin-left: 4px;
-}
-.add-next-stage:active { opacity: 0.7; }
-.goal-input {
-  background: var(--fill);
-  border: none;
-  border-radius: 8px;
-  color: var(--label);
-  font-size: 15px;
-  padding: 8px 10px;
-  width: 100%;
-  margin-top: 8px;
-}
 
 .progress-track {
   height: 5px;
@@ -631,9 +605,6 @@ button {
 }
 .move-group-title .move-icon { width: 24px; height: 24px; font-size: 13px; border-radius: 7px; }
 .move-total { margin-left: auto; color: var(--label-tertiary); font-weight: 600; font-size: 12px; }
-.perf-score { color: var(--blue); font-weight: 700; font-size: 12px; }
-.perf-explain { margin-top: 2px; }
-.goal-forecast { color: var(--green); margin-top: 2px; }
 
 .history-list { margin-top: 10px; display: flex; flex-direction: column; gap: 0; }
 .history-row {

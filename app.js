@@ -5,6 +5,7 @@ let activeTab = 'home';
 let keypadState = null; // { moveId, mode: 'log' | 'maxtest', reps: '', band: 'none' }
 let actionSheetState = null; // { moveId }
 let confirmState = null; // { title, body, confirmLabel, danger, onConfirm }
+let goalPromptState = null; // { moveId }
 let timerState = { remaining: 90, running: false, intervalId: null };
 let audioCtx = null;
 let dayCollapseState = {}; // dayKey -> expanded boolean, persists across re-renders
@@ -36,6 +37,7 @@ function render() {
   if (keypadState) $app.appendChild(renderKeypad());
   if (actionSheetState) $app.appendChild(renderActionSheet());
   if (confirmState) $app.appendChild(renderConfirm());
+  if (goalPromptState) $app.appendChild(renderGoalPrompt());
 }
 
 function renderTopBar() {
@@ -104,8 +106,24 @@ function renderMoveCard(move) {
     if (recent) {
       body += `<div class="card-sub">Last: ${recent.reps} reps${recent.band !== 'none' ? ` · <span class="band-dot band-${recent.band}"></span>${BANDS[recent.band].label}` : ''} · ${fmtDate(recent.loggedAt)}</div>`;
     }
+    const forecast = store.getSessionForecast(move.id);
+    if (forecast.hasMaxTest) {
+      body += `<div class="card-forecast">🎯 Next max attempt: aim for ${forecast.nextMaxTarget} reps${forecast.nextMaxBand !== 'none' ? ` (${BANDS[forecast.nextMaxBand].label})` : ''}${forecast.streak > 0 ? ` — ${forecast.sessionsUntilBump} more solid session${forecast.sessionsUntilBump === 1 ? '' : 's'} to bump it` : ''}</div>`;
+    }
+    const advice = store.getTrendAdvice(move.id);
+    if (advice) {
+      body += `<div class="card-trend card-trend-${advice.level}">${advice.text}</div>`;
+    }
     if (status.suggestion) {
       body += `<div class="card-suggestion">✅ ${status.suggestion}</div>`;
+    }
+    const prog = store.getProgressionStatus(move.id);
+    if (prog?.readyToAdvance) {
+      body += `<div class="card-suggestion">🌳 Ready for ${prog.nextName} — <button class="add-next-stage" data-next="${prog.nextName}">Add it</button></div>`;
+    } else if (prog?.nextExists) {
+      body += `<div class="card-sub">Next stage: ${prog.nextName} (already in your moves)</div>`;
+    } else if (prog && !prog.nextName) {
+      body += `<div class="card-sub">🏔️ Top of this progression chain</div>`;
     }
   }
 
@@ -122,6 +140,12 @@ function renderMoveCard(move) {
     openActionSheet(move.id);
   };
   card.querySelector('.card-more').addEventListener('click', openSheet);
+  card.querySelector('.add-next-stage')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const name = e.target.dataset.next;
+    const preset = PRESET_MOVES.find((p) => p.name === name);
+    if (preset) store.addMove(preset.name, preset.isAssistable);
+  });
   attachDragReorder(card, move, () => {
     if (!status.hasMaxTest) openKeypad(move.id, 'maxtest');
     else openKeypad(move.id, 'log');
@@ -384,6 +408,9 @@ function renderKeypad() {
   const move = store.data.moves.find((m) => m.id === keypadState.moveId);
   const target = store.getTarget(move.id);
   const isMaxTest = keypadState.mode === 'maxtest';
+  const forecast = store.getSessionForecast(move.id);
+  const showForecastGreeting = !isMaxTest && forecast.hasMaxTest && !store.hasLoggedToday(move.id);
+  const advice = !isMaxTest ? store.getTrendAdvice(move.id) : null;
 
   const overlay = el('<div class="overlay keypad-overlay"></div>');
   const modal = el(`<div class="modal keypad-modal">
@@ -392,7 +419,9 @@ function renderKeypad() {
       <button class="close-btn">✕</button>
     </div>
     ${isMaxTest ? '<div class="card-sub">Do as many clean unassisted reps as you can.</div>' : ''}
+    ${showForecastGreeting ? `<div class="card-sub">🎯 First set today — last time: ${forecast.last.reps} reps${forecast.last.band !== 'none' ? ` (${BANDS[forecast.last.band].label})` : ''}. Aim for ${forecast.nextMaxTarget}${forecast.nextMaxBand !== 'none' ? ` (${BANDS[forecast.nextMaxBand].label})` : ''} for a new max.</div>` : ''}
     ${!isMaxTest && target ? `<div class="card-target">Target: ${target.reps} reps × ${target.sets} sets</div>` : ''}
+    ${advice ? `<div class="card-trend card-trend-${advice.level}">${advice.text}</div>` : ''}
     <div class="reps-display">${keypadState.reps || '0'}</div>
     ${!isMaxTest && move.isAssistable ? renderBandChips() : ''}
     <div class="keypad-grid"></div>
@@ -431,8 +460,7 @@ function renderKeypad() {
   modal.querySelector('.kp-save').addEventListener('click', () => {
     const reps = parseInt(keypadState.reps, 10);
     if (!reps || reps < 1) return;
-    if (isMaxTest) store.setMaxTest(move.id, reps, keypadState.band);
-    else store.logSession(move.id, reps, keypadState.band);
+    store.logSet(move.id, reps, keypadState.band, { forceMaxTest: isMaxTest });
     closeKeypad();
   });
   modal.querySelector('.retest-link')?.addEventListener('click', () => {
@@ -463,6 +491,7 @@ function renderActionSheet() {
     <div class="sheet-title">${moveIcon(move.name)} ${move.name}</div>
     <button class="sheet-row" data-action="log">Log a Set</button>
     <button class="sheet-row" data-action="maxtest">${status.hasMaxTest ? 'Retest Baseline Max' : 'Set Baseline Max'}</button>
+    <button class="sheet-row" data-action="setgoal">Set a Goal</button>
     <button class="sheet-row destructive" data-action="delete">Delete Move</button>
   </div>`);
   const cancel = el('<button class="sheet-cancel">Cancel</button>');
@@ -477,6 +506,11 @@ function renderActionSheet() {
   group.querySelector('[data-action="maxtest"]').addEventListener('click', () => {
     closeActionSheet();
     openKeypad(move.id, 'maxtest');
+  });
+  group.querySelector('[data-action="setgoal"]').addEventListener('click', () => {
+    closeActionSheet();
+    goalPromptState = { moveId: move.id };
+    render();
   });
   group.querySelector('[data-action="delete"]').addEventListener('click', () => {
     closeActionSheet();
@@ -520,6 +554,37 @@ function renderConfirm() {
     const { onConfirm } = confirmState;
     closeConfirm();
     onConfirm?.();
+  });
+  return overlay;
+}
+
+// ---------- Goal prompt ----------
+function closeGoalPrompt() {
+  goalPromptState = null;
+  render();
+}
+
+function renderGoalPrompt() {
+  const move = store.data.moves.find((m) => m.id === goalPromptState.moveId);
+  const existing = store.data.goals[move.id];
+  const overlay = el('<div class="alert-overlay"></div>');
+  const box = el(`<div class="alert">
+    <div class="alert-title">Set a goal for ${move.name}</div>
+    <div class="alert-body">
+      Target rep count: <input type="number" class="goal-input" min="1" step="1" value="${existing?.targetReps ?? ''}">
+    </div>
+    <div class="alert-actions">
+      <button class="alert-btn cancel">Cancel</button>
+      <button class="alert-btn bold">Save</button>
+    </div>
+  </div>`);
+  overlay.appendChild(box);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeGoalPrompt(); });
+  box.querySelector('.cancel').addEventListener('click', closeGoalPrompt);
+  box.querySelector('.bold').addEventListener('click', () => {
+    const targetReps = parseInt(box.querySelector('.goal-input').value, 10);
+    if (targetReps && targetReps > 0) store.setGoal(move.id, targetReps);
+    closeGoalPrompt();
   });
   return overlay;
 }
@@ -728,11 +793,22 @@ function renderProgress() {
       // Oldest first: the first set of the day is the freshest attempt (Max Rep).
       const moveSessions = byMove[moveId].slice().sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt));
       const totalReps = moveSessions.reduce((sum, s) => sum + s.reps, 0);
+      const perf = store.getPerformanceScore(move.id);
+      const goalForecast = store.getGoalForecast(move.id);
+      const goalText = goalForecast && {
+        met: `Goal reached! ${goalForecast.latestReps} reps ≥ ${goalForecast.target}.`,
+        'insufficient-history': 'Log a couple more max tests to get a forecast.',
+        'no-progress': 'No upward trend yet — keep testing to build a forecast.',
+        'on-track': `At ~${goalForecast.repsPerWeek} reps/week, you'll hit ${goalForecast.target} reps in ~${goalForecast.weeksToGoal} week${goalForecast.weeksToGoal === 1 ? '' : 's'}.`,
+      }[goalForecast.status];
       const group = el(`<div class="move-group">
         <div class="move-group-title">
           <span class="move-icon">${moveIcon(move.name)}</span>${move.name}
+          <span class="perf-score">${perf.score} ${perf.trend === 'up' ? '▲' : perf.trend === 'down' ? '▼' : '—'} ${perf.trendPct}%</span>
           <span class="move-total">${totalReps} reps</span>
         </div>
+        <div class="card-sub perf-explain">${perf.explanation}</div>
+        ${goalText ? `<div class="card-sub goal-forecast">${goalText}</div>` : ''}
         <div class="history-list"></div>
       </div>`);
       const list = group.querySelector('.history-list');

@@ -166,49 +166,44 @@ function renderWeekStrip(moveId) {
   return el(`<div class="week-strip">${row}</div>`);
 }
 
-// ---------- Rep progression insight list (all moves with a baseline) ----------
+// ---------- Set-by-set progression insight list (all moves with history) ----------
 function renderRepProgressList() {
-  const moves = store.orderedMoves().filter((m) => store.data.maxTests[m.id]);
-  if (!moves.length) return null;
-
   const wrap = el('<div class="rep-progress-list"></div>');
   wrap.appendChild(el('<div class="rep-progress-heading">Rep Progression</div>'));
 
-  for (const move of moves) {
-    const insight = store.getRepProgressionInsight(move.id);
+  let any = false;
+  for (const move of store.orderedMoves()) {
+    const insight = store.getSetProgression(move.id);
     if (!insight) continue; // defensive: skip rather than crash on any unexpected shape
-    wrap.appendChild(renderRepProgressCard(move, insight));
+    any = true;
+    wrap.appendChild(renderSetProgressionCard(move, insight));
   }
-  return wrap;
+  return any ? wrap : null;
 }
 
-function renderRepProgressCard(move, insight) {
-  const { range, band, nextTarget, toppedOut, lastSession } = insight;
-  const bandLabel = band !== 'none' ? ` (${BANDS[band].label})` : '';
-  const recap = lastSession
-    ? `<div class="card-sub">Last session: ${lastSession.reps.join(', ')}${lastSession.allHit ? ' — all sets hit! ✅' : ''}</div>`
+function renderSetProgressionCard(move, insight) {
+  const { band, nextTargets, totalTarget, lastSession, volumeDelta, readyForNewMax } = insight;
+  const bandLabel = band !== 'none' ? BANDS[band].label : 'Unassisted';
+  const recap = `<div class="card-sub">Last session: ${lastSession.reps.join(', ')} — ${lastSession.total} total</div>`;
+  const deltaNote = volumeDelta === null || volumeDelta === 0
+    ? ''
+    : `<div class="card-sub rep-progress-delta">${volumeDelta > 0 ? '+' : ''}${volumeDelta} total reps from last time</div>`;
+  const readyNote = readyForNewMax
+    ? `<div class="rep-progress-ready">🔥 Ready to try ${nextTargets[0]} clean reps on Set 1!</div>`
     : '';
 
-  const card = el(`<div class="rep-progress-card ${toppedOut ? 'ready' : ''}">
+  return el(`<div class="rep-progress-card ${readyForNewMax ? 'ready' : ''}">
     <div class="rep-progress-top">
       <span class="move-icon">${moveIcon(move.name)}</span>
       <span class="rep-progress-name">${move.name}</span>
-      <span class="rep-progress-range">${range.low}–${range.high} reps</span>
+      <span class="rep-progress-band">${bandLabel}</span>
     </div>
     ${recap}
-    ${toppedOut
-      ? `<div class="rep-progress-ready">🔥 Topped out at ${range.high} reps${bandLabel} — reduce assistance or add difficulty.</div>`
-      : `<div class="card-target">Aim for ${nextTarget} reps${bandLabel} on every set</div>`}
-    ${toppedOut ? '<div class="program-actions"></div>' : ''}
+    ${readyNote}
+    <div class="card-target">Next: ${nextTargets.join(' / ')}</div>
+    <div class="card-sub">Goal: ${totalTarget} total reps</div>
+    ${deltaNote}
   </div>`);
-
-  if (toppedOut) {
-    const actionsWrap = card.querySelector('.program-actions');
-    const btn = el('<button class="program-btn primary">Retest Max</button>');
-    btn.addEventListener('click', () => openKeypad(move.id, 'maxtest'));
-    actionsWrap.appendChild(btn);
-  }
-  return card;
 }
 
 // Hold-and-drag to reorder a move card; a quick tap (release before the hold

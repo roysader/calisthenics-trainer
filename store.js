@@ -36,28 +36,6 @@ const DEFAULT_MOVE_NAMES = ['Reverse Row', 'Dips', 'Wide Pull-up', 'Pull-up', 'B
 export const FOCUS_MOVE_NAME = 'Wide Pull-up';
 const ACCESSORY_MOVE_NAMES = ['Pull-up', 'Chin-up', 'Reverse Row', 'Australian Row'];
 
-const REP_RANGES = {
-  'Wide Pull-up': [3, 8],
-  'Pull-up': [3, 8],
-  'Chin-up': [3, 8],
-  'Muscle-up': [3, 8],
-  'Handstand Pushup': [3, 8],
-  'Dips': [6, 12],
-  'Bar Pushup': [8, 15],
-  'Diamond Pushup': [8, 15],
-  'Archer Pushup': [8, 15],
-  'Reverse Row': [8, 15],
-  'Australian Row': [8, 15],
-  'Squat': [8, 15],
-  'Pistol Squat': [8, 15],
-  'Bulgarian Split Squat': [8, 15],
-  'L-sit': [5, 12],
-  'Plank': [5, 12],
-};
-const DEFAULT_REP_RANGE = [5, 12];
-function repRangeFor(moveName) {
-  return REP_RANGES[moveName] || DEFAULT_REP_RANGE;
-}
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -353,70 +331,126 @@ class Store {
     return { hasMaxTest: true, target, readyToRetest, suggestion };
   }
 
-  // ---- Rep progression insight (range-based double progression) ----
-  // Uses ONLY data.maxTests[moveId] (reps/band/testedAt) and plain session
-  // fields (reps/band/loggedAt), grouped into calendar-day sessions with the
-  // same loggedAt.slice(0,10) convention used elsewhere (groupedHistory,
-  // getPlanStatus). Deliberately never reads session.isMaxTest -- that flag
-  // does not survive pullFromCloud() and must not be depended on.
-  getRepProgressionInsight(moveId) {
+  // ---- Set-by-set progressive overload engine ----
+  // Derives per-set targets purely from this move's session history (no new
+  // schema, no new fields) -- grouped by calendar day and by band (a
+  // different assistance level is a separate, independent progression).
+  // The card tracks whichever band was most recently trained. Deliberately
+  // never reads session.isMaxTest or data.maxTests -- fully independent of
+  // the older baseline-test concept.
+  getSetProgression(moveId) {
     const move = this.data.moves.find((m) => m.id === moveId);
-    const max = this.data.maxTests[moveId];
-    if (!move || !max || !max.testedAt || typeof max.reps !== 'number' || !Number.isFinite(max.reps)) return null;
+    if (!move) return null;
 
-    const testedAtMs = new Date(max.testedAt).getTime();
-    if (!Number.isFinite(testedAtMs)) return null;
+    const validSessions = this.sessionsForMove(moveId).filter(
+      (s) => s && typeof s.reps === 'number' && Number.isFinite(s.reps) && s.reps > 0 && s.loggedAt
+    );
+    if (!validSessions.length) return null;
 
-    const [low, high] = repRangeFor(move.name);
-    const band = max.band || 'none';
-    // The session that established this baseline is logged moments AFTER
-    // testedAt was captured (setMaxTest calls logSession right after), so a
-    // plain "loggedMs <= testedAtMs" check never actually excludes it -- it
-    // would count as an instant, trivial "qualifying day" and bump the
-    // target before any real repeat session. Exclude by calendar day instead
-    // (using the same loggedAt.slice(0,10) convention as elsewhere), which
-    // is robust regardless of exact millisecond ordering within that day.
-    const testedAtDay = max.testedAt.slice(0, 10);
-
-    // Only sessions on the SAME band as the current max are comparable
-    // evidence -- a different band changes the difficulty, so it's excluded
-    // (not counted, not a reset), same rule used elsewhere in this file.
-    const relevant = this.sessionsForMove(moveId).filter((s) => {
-      if (!s || typeof s.reps !== 'number' || !Number.isFinite(s.reps) || !s.loggedAt) return false;
-      const loggedMs = new Date(s.loggedAt).getTime();
-      if (!Number.isFinite(loggedMs) || loggedMs < testedAtMs) return false;
-      if (s.loggedAt.slice(0, 10) === testedAtDay) return false;
-      return (s.band || 'none') === band;
-    });
+    const band = validSessions[0].band || 'none'; // most recent (sessionsForMove is desc)
+    const bandSessions = validSessions.filter((s) => (s.band || 'none') === band);
 
     const byDay = {};
-    for (const s of relevant) {
+    for (const s of bandSessions) {
       const day = s.loggedAt.slice(0, 10);
       (byDay[day] = byDay[day] || []).push(s);
     }
     const days = Object.keys(byDay).sort(); // ascending, oldest first
 
-    let target = Math.min(Math.max(max.reps, low), high);
-    let toppedOut = false;
-    let lastSession = null;
+    let setTargets = null;
+    let missStreaks = null;
+    let lastDayTotal = null;
+    let prevDayTotal = null;
+    let readyForNewMax = false;
 
     for (const day of days) {
-      const sets = byDay[day].sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt));
-      const allHit = sets.every((s) => s.reps >= target);
-      lastSession = { reps: sets.map((s) => s.reps), allHit };
+      const daySets = byDay[day]
+        .sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt))
+        .map((s) => s.reps);
+      const dayTotal = daySets.reduce((a, b) => a + b, 0);
+      prevDayTotal = lastDayTotal;
+      lastDayTotal = dayTotal;
+
+      if (setTargets === null) {
+        // First day on this band: the baseline IS whatever was actually
+        // performed -- no guessed starting formula.
+        setTargets = daySets.slice();
+        missStreaks = setTargets.map(() => 0);
+        continue;
+      }
+
+      // Match by index; extra sets today become new target slots, missing
+      // sets are simply not evaluated (not treated as a failure).
+      while (setTargets.length < daySets.length) {
+        setTargets.push(daySets[setTargets.length]);
+        missStreaks.push(0);
+      }
+
+      const attempted = daySets.length;
+      const hits = [];
+      for (let i = 0; i < attempted; i++) hits.push(daySets[i] >= setTargets[i]);
+      const allHit = attempted >= setTargets.length && hits.every(Boolean);
+
+      readyForNewMax = false;
+      const prevSet1 = setTargets[0];
+
       if (allHit) {
-        if (target === high) toppedOut = true;
-        target = Math.min(target + 1, high);
+        // Trigger on TODAY'S actual performance being uniform across every
+        // set (e.g. 4,4,4), not on the stored target array having been
+        // uniform beforehand -- a single clean, even session at the current
+        // ceiling is itself the signal to attempt a new max, with no extra
+        // confirmation day required (matches "achieve 4/4/4 once -> next
+        // becomes 5/4/3", not "achieve it on two separate days").
+        const actualIsUniform = attempted === setTargets.length && daySets.every((r) => r === daySets[0]);
+        if (actualIsUniform) {
+          // Attempt a new max: bump set 1 and re-seed the rest as a fresh
+          // descending pattern (a new max rep is fatiguing, so the
+          // following sets naturally can't hold the old ceiling either).
+          const newMax = Math.max(setTargets[0], daySets[0]) + 1;
+          setTargets = setTargets.map((_, i) => Math.max(1, newMax - i));
+          missStreaks = setTargets.map(() => 0);
+        } else if (setTargets.length > 1) {
+          // Strengthen the weakest non-first set (ties broken toward the
+          // earliest index) -- build up the weakest link before pushing an
+          // already-strong set further.
+          let weakestIdx = 1;
+          for (let i = 2; i < setTargets.length; i++) {
+            if (setTargets[i] < setTargets[weakestIdx]) weakestIdx = i;
+          }
+          setTargets[weakestIdx] += 1;
+          missStreaks[weakestIdx] = 0;
+        }
+        readyForNewMax = setTargets[0] > prevSet1;
+      } else {
+        // A miss: give it another attempt. Only reduce a specific set after
+        // 3 consecutive misses on that same set, and never all at once.
+        for (let i = 0; i < attempted; i++) {
+          if (hits[i]) {
+            missStreaks[i] = 0;
+          } else {
+            missStreaks[i] += 1;
+            if (missStreaks[i] >= 3) {
+              setTargets[i] = Math.max(1, setTargets[i] - 1);
+              missStreaks[i] = 0;
+            }
+          }
+        }
       }
     }
 
+    const lastDay = days[days.length - 1];
+    const lastReps = byDay[lastDay]
+      .sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt))
+      .map((s) => s.reps);
+
     return {
-      hasBaseline: true,
-      range: { low, high },
+      hasHistory: true,
       band,
-      nextTarget: target,
-      toppedOut,
-      lastSession,
+      nextTargets: setTargets,
+      totalTarget: setTargets.reduce((a, b) => a + b, 0),
+      lastSession: { reps: lastReps, total: lastDayTotal },
+      volumeDelta: prevDayTotal === null ? null : lastDayTotal - prevDayTotal,
+      readyForNewMax,
     };
   }
 

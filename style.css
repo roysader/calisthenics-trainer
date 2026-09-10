@@ -573,10 +573,9 @@ button {
 .rep-progress-card.ready { outline: 1px solid var(--blue); }
 .rep-progress-top { display: flex; align-items: center; gap: 6px; font-weight: 590; }
 .rep-progress-name { font-size: 14px; }
-.rep-progress-range { margin-left: auto; font-size: 11px; color: var(--label-tertiary); font-weight: 600; }
+.rep-progress-band { margin-left: auto; font-size: 11px; color: var(--label-tertiary); font-weight: 600; }
 .rep-progress-ready { font-size: 13px; font-weight: 590; color: var(--blue); margin-top: 4px; }
-.rep-progress-bar { height: 4px; border-radius: 2px; background: var(--fill-2); margin-top: 8px; overflow: hidden; }
-.rep-progress-fill { height: 100%; background: var(--blue); }
+.rep-progress-delta { color: var(--green); }
 
 .day-section {
   border-radius: var(--r-lg);

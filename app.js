@@ -234,23 +234,26 @@ function renderRepProgressList() {
 }
 
 function renderRepProgressCard(move, insight) {
-  const { currentMax, qualifyingCount, target, ready, nextTargetReps } = insight;
-  const bandNote = currentMax.band !== 'none' ? ` · <span class="band-dot band-${currentMax.band}"></span>${BANDS[currentMax.band].label}` : '';
+  const { range, band, nextTarget, toppedOut, lastSession } = insight;
+  const bandLabel = band !== 'none' ? ` (${BANDS[band].label})` : '';
+  const recap = lastSession
+    ? `<div class="card-sub">Last session: ${lastSession.reps.join(', ')}${lastSession.allHit ? ' — all sets hit! ✅' : ''}</div>`
+    : '';
 
-  const card = el(`<div class="rep-progress-card ${ready ? 'ready' : ''}">
+  const card = el(`<div class="rep-progress-card ${toppedOut ? 'ready' : ''}">
     <div class="rep-progress-top">
       <span class="move-icon">${moveIcon(move.name)}</span>
       <span class="rep-progress-name">${move.name}</span>
+      <span class="rep-progress-range">${range.low}–${range.high} reps</span>
     </div>
-    <div class="card-sub">Last max: ${currentMax.reps} reps${bandNote} · ${fmtDate(currentMax.testedAt)}</div>
-    ${ready
-      ? `<div class="rep-progress-ready">Aim for ${nextTargetReps} reps — new max!</div>`
-      : `<div class="rep-progress-bar"><div class="rep-progress-fill" style="width:${(qualifyingCount / target) * 100}%"></div></div>
-         <div class="card-sub">${qualifyingCount} of ${target} sessions logged at ${currentMax.reps}+ reps</div>`}
-    ${ready ? '<div class="program-actions"></div>' : ''}
+    ${recap}
+    ${toppedOut
+      ? `<div class="rep-progress-ready">🔥 Topped out at ${range.high} reps${bandLabel} — reduce assistance or add difficulty.</div>`
+      : `<div class="card-target">Aim for ${nextTarget} reps${bandLabel} on every set</div>`}
+    ${toppedOut ? '<div class="program-actions"></div>' : ''}
   </div>`);
 
-  if (ready) {
+  if (toppedOut) {
     const actionsWrap = card.querySelector('.program-actions');
     const btn = el('<button class="program-btn primary">Retest Max</button>');
     btn.addEventListener('click', () => openKeypad(move.id, 'maxtest'));

@@ -143,7 +143,6 @@ function renderProgram() {
   }
 
   wrap.appendChild(renderWeekStrip(prog.move.id));
-  wrap.appendChild(renderProgramCard(prog));
 
   const repProgressList = renderRepProgressList();
   if (repProgressList) wrap.appendChild(repProgressList);
@@ -165,56 +164,6 @@ function renderWeekStrip(moveId) {
     .map((d) => `<div class="week-day"><div class="week-dot ${d.trained ? 'filled' : ''} ${d.isToday ? 'today' : ''}"></div><div class="week-label">${d.label}</div></div>`)
     .join('');
   return el(`<div class="week-strip">${row}</div>`);
-}
-
-function renderProgramCard(prog) {
-  const { status, move } = prog;
-  let body = '';
-  let actions = [];
-
-  if (status === 'needs-baseline') {
-    body = `<div class="card-sub">No baseline max yet — test your max to generate a personalized target.</div>`;
-    actions = [{ label: 'Set Baseline Max', primary: true, onClick: () => openKeypad(move.id, 'maxtest') }];
-  } else if (status === 'deload') {
-    body = `<div class="card-sub">🪫 It's been 5+ weeks since your last deload — ease off this week (~50% volume) on all pulling moves, including ${move.name}.</div>`;
-    actions = [{ label: 'Mark Deload Done', primary: true, onClick: () => store.markDeload() }];
-  } else if (status === 'retest') {
-    body = `<div class="card-sub">✅ You've hit ${prog.target.reps} reps × ${prog.target.sets} sets two sessions running — time to retest your max.</div>`;
-    actions = [{ label: 'Retest Max', primary: true, onClick: () => openKeypad(move.id, 'maxtest') }];
-  } else if (status === 'trained-today') {
-    body = `<div class="card-sub">Nice work — you already trained ${move.name} today. Let it recover; rest or stick to light accessory pulling tomorrow.</div>`;
-    actions = [{ label: 'Log Another Set', primary: false, onClick: () => openKeypad(move.id, 'log') }];
-  } else if (status === 'recovery') {
-    body = `<div class="card-sub">Trained yesterday — today's a recovery day for ${move.name}.${prog.accessory ? ` If you want light volume, ${prog.accessory.name} is a good low-fatigue accessory today.` : ' Rest this move today.'}</div>`;
-    if (prog.accessory) {
-      actions = [{ label: `Log ${prog.accessory.name}`, primary: false, onClick: () => openKeypad(prog.accessory.id, 'log') }];
-    }
-  } else if (status === 'train') {
-    const daysNote = Number.isFinite(prog.daysSince) ? `Last trained ${prog.daysSince} day${prog.daysSince === 1 ? '' : 's'} ago.` : "You haven't logged this move yet.";
-    body = `
-      <div class="card-target">Target: ${prog.target.reps} reps × ${prog.target.sets} sets</div>
-      <div class="card-sub">${daysNote}</div>
-      ${prog.accessory ? `<div class="card-sub">Finish with a few sets of ${prog.accessory.name} to build supporting pull strength.</div>` : ''}`;
-    actions = [{ label: 'Log a Set', primary: true, onClick: () => openKeypad(move.id, 'log') }];
-    if (prog.accessory) {
-      actions.push({ label: `Log ${prog.accessory.name}`, primary: false, onClick: () => openKeypad(prog.accessory.id, 'log') });
-    }
-  }
-
-  const card = el(`<div class="progress-section program-card">
-    <div class="card-title">${moveIcon(move.name)} ${move.name} Focus</div>
-    ${body}
-    <div class="program-actions"></div>
-  </div>`);
-
-  const actionsWrap = card.querySelector('.program-actions');
-  for (const a of actions) {
-    const btn = el(`<button class="program-btn ${a.primary ? 'primary' : ''}">${a.label}</button>`);
-    btn.addEventListener('click', a.onClick);
-    actionsWrap.appendChild(btn);
-  }
-
-  return card;
 }
 
 // ---------- Rep progression insight list (all moves with a baseline) ----------

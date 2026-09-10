@@ -144,6 +144,10 @@ function renderProgram() {
 
   wrap.appendChild(renderWeekStrip(prog.move.id));
   wrap.appendChild(renderProgramCard(prog));
+
+  const repProgressList = renderRepProgressList();
+  if (repProgressList) wrap.appendChild(repProgressList);
+
   return wrap;
 }
 
@@ -210,6 +214,48 @@ function renderProgramCard(prog) {
     actionsWrap.appendChild(btn);
   }
 
+  return card;
+}
+
+// ---------- Rep progression insight list (all moves with a baseline) ----------
+function renderRepProgressList() {
+  const moves = store.orderedMoves().filter((m) => store.data.maxTests[m.id]);
+  if (!moves.length) return null;
+
+  const wrap = el('<div class="rep-progress-list"></div>');
+  wrap.appendChild(el('<div class="rep-progress-heading">Rep Progression</div>'));
+
+  for (const move of moves) {
+    const insight = store.getRepProgressionInsight(move.id);
+    if (!insight) continue; // defensive: skip rather than crash on any unexpected shape
+    wrap.appendChild(renderRepProgressCard(move, insight));
+  }
+  return wrap;
+}
+
+function renderRepProgressCard(move, insight) {
+  const { currentMax, qualifyingCount, target, ready, nextTargetReps } = insight;
+  const bandNote = currentMax.band !== 'none' ? ` · <span class="band-dot band-${currentMax.band}"></span>${BANDS[currentMax.band].label}` : '';
+
+  const card = el(`<div class="rep-progress-card ${ready ? 'ready' : ''}">
+    <div class="rep-progress-top">
+      <span class="move-icon">${moveIcon(move.name)}</span>
+      <span class="rep-progress-name">${move.name}</span>
+    </div>
+    <div class="card-sub">Last max: ${currentMax.reps} reps${bandNote} · ${fmtDate(currentMax.testedAt)}</div>
+    ${ready
+      ? `<div class="rep-progress-ready">Aim for ${nextTargetReps} reps — new max!</div>`
+      : `<div class="rep-progress-bar"><div class="rep-progress-fill" style="width:${(qualifyingCount / target) * 100}%"></div></div>
+         <div class="card-sub">${qualifyingCount} of ${target} sessions logged at ${currentMax.reps}+ reps</div>`}
+    ${ready ? '<div class="program-actions"></div>' : ''}
+  </div>`);
+
+  if (ready) {
+    const actionsWrap = card.querySelector('.program-actions');
+    const btn = el('<button class="program-btn primary">Retest Max</button>');
+    btn.addEventListener('click', () => openKeypad(move.id, 'maxtest'));
+    actionsWrap.appendChild(btn);
+  }
   return card;
 }
 

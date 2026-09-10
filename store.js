@@ -330,6 +330,49 @@ class Store {
     return { hasMaxTest: true, target, readyToRetest, suggestion };
   }
 
+  // ---- Rep progression insight (per-move "next max" forecast) ----
+  // Uses ONLY data.maxTests[moveId] (reps/band/testedAt) and plain session
+  // fields (reps/band/loggedAt). Deliberately never reads session.isMaxTest --
+  // that flag does not survive pullFromCloud() and must not be depended on.
+  getRepProgressionInsight(moveId) {
+    const max = this.data.maxTests[moveId];
+    if (!max || !max.testedAt || typeof max.reps !== 'number') return null;
+
+    const testedAtMs = new Date(max.testedAt).getTime();
+    if (!Number.isFinite(testedAtMs)) return null;
+
+    const sessions = this.sessionsForMove(moveId); // [] for a brand-new move -- safe, no throw
+    const QUALIFYING_TARGET = 3;
+
+    // A "qualifying" session: logged strictly after the max was set, on the
+    // same band as the max, with reps >= the max's reps. A different-band
+    // session is excluded (not counted, not a reset -- a heavier-assist band
+    // inflates achievable reps, a lighter one deflates them, so it isn't
+    // comparable evidence, but it shouldn't erase already-earned progress
+    // either). Sessions missing loggedAt/reps (legacy/partial shape) are
+    // skipped rather than crashing or false-counting.
+    const qualifying = sessions.filter((s) => {
+      if (!s || typeof s.reps !== 'number' || !s.loggedAt) return false;
+      const loggedMs = new Date(s.loggedAt).getTime();
+      if (!Number.isFinite(loggedMs) || loggedMs <= testedAtMs) return false;
+      const band = s.band || 'none';
+      if (band !== (max.band || 'none')) return false;
+      return s.reps >= max.reps;
+    });
+
+    const count = Math.min(qualifying.length, QUALIFYING_TARGET);
+    const ready = qualifying.length >= QUALIFYING_TARGET;
+
+    return {
+      hasBaseline: true,
+      currentMax: { reps: max.reps, band: max.band || 'none', testedAt: max.testedAt },
+      qualifyingCount: count,
+      target: QUALIFYING_TARGET,
+      ready,
+      nextTargetReps: max.reps + 1,
+    };
+  }
+
   needsDeload() {
     const last = this.data.settings.lastDeload || Date.now();
     return Date.now() - last > 35 * DAY_MS;

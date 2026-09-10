@@ -395,13 +395,18 @@ class Store {
       const prevSet1 = setTargets[0];
 
       if (allHit) {
-        const uniform = setTargets.every((t) => t === setTargets[0]);
-        if (uniform) {
-          // Every set already matches set 1 -- attempt a new max: bump set 1
-          // and re-seed the rest as a fresh descending pattern (a new max
-          // rep is fatiguing, so the following sets naturally can't hold the
-          // old ceiling either).
-          const newMax = setTargets[0] + 1;
+        // Trigger on TODAY'S actual performance being uniform across every
+        // set (e.g. 4,4,4), not on the stored target array having been
+        // uniform beforehand -- a single clean, even session at the current
+        // ceiling is itself the signal to attempt a new max, with no extra
+        // confirmation day required (matches "achieve 4/4/4 once -> next
+        // becomes 5/4/3", not "achieve it on two separate days").
+        const actualIsUniform = attempted === setTargets.length && daySets.every((r) => r === daySets[0]);
+        if (actualIsUniform) {
+          // Attempt a new max: bump set 1 and re-seed the rest as a fresh
+          // descending pattern (a new max rep is fatiguing, so the
+          // following sets naturally can't hold the old ceiling either).
+          const newMax = Math.max(setTargets[0], daySets[0]) + 1;
           setTargets = setTargets.map((_, i) => Math.max(1, newMax - i));
           missStreaks = setTargets.map(() => 0);
         } else if (setTargets.length > 1) {

@@ -144,6 +144,10 @@ function renderProgram() {
 
   wrap.appendChild(renderWeekStrip(prog.move.id));
   wrap.appendChild(renderProgramCard(prog));
+
+  const repProgressList = renderRepProgressList();
+  if (repProgressList) wrap.appendChild(repProgressList);
+
   return wrap;
 }
 
@@ -210,6 +214,51 @@ function renderProgramCard(prog) {
     actionsWrap.appendChild(btn);
   }
 
+  return card;
+}
+
+// ---------- Rep progression insight list (all moves with a baseline) ----------
+function renderRepProgressList() {
+  const moves = store.orderedMoves().filter((m) => store.data.maxTests[m.id]);
+  if (!moves.length) return null;
+
+  const wrap = el('<div class="rep-progress-list"></div>');
+  wrap.appendChild(el('<div class="rep-progress-heading">Rep Progression</div>'));
+
+  for (const move of moves) {
+    const insight = store.getRepProgressionInsight(move.id);
+    if (!insight) continue; // defensive: skip rather than crash on any unexpected shape
+    wrap.appendChild(renderRepProgressCard(move, insight));
+  }
+  return wrap;
+}
+
+function renderRepProgressCard(move, insight) {
+  const { range, band, nextTarget, toppedOut, lastSession } = insight;
+  const bandLabel = band !== 'none' ? ` (${BANDS[band].label})` : '';
+  const recap = lastSession
+    ? `<div class="card-sub">Last session: ${lastSession.reps.join(', ')}${lastSession.allHit ? ' — all sets hit! ✅' : ''}</div>`
+    : '';
+
+  const card = el(`<div class="rep-progress-card ${toppedOut ? 'ready' : ''}">
+    <div class="rep-progress-top">
+      <span class="move-icon">${moveIcon(move.name)}</span>
+      <span class="rep-progress-name">${move.name}</span>
+      <span class="rep-progress-range">${range.low}–${range.high} reps</span>
+    </div>
+    ${recap}
+    ${toppedOut
+      ? `<div class="rep-progress-ready">🔥 Topped out at ${range.high} reps${bandLabel} — reduce assistance or add difficulty.</div>`
+      : `<div class="card-target">Aim for ${nextTarget} reps${bandLabel} on every set</div>`}
+    ${toppedOut ? '<div class="program-actions"></div>' : ''}
+  </div>`);
+
+  if (toppedOut) {
+    const actionsWrap = card.querySelector('.program-actions');
+    const btn = el('<button class="program-btn primary">Retest Max</button>');
+    btn.addEventListener('click', () => openKeypad(move.id, 'maxtest'));
+    actionsWrap.appendChild(btn);
+  }
   return card;
 }
 

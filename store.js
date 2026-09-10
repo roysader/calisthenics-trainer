@@ -36,6 +36,29 @@ const DEFAULT_MOVE_NAMES = ['Reverse Row', 'Dips', 'Wide Pull-up', 'Pull-up', 'B
 export const FOCUS_MOVE_NAME = 'Wide Pull-up';
 const ACCESSORY_MOVE_NAMES = ['Pull-up', 'Chin-up', 'Reverse Row', 'Australian Row'];
 
+const REP_RANGES = {
+  'Wide Pull-up': [3, 8],
+  'Pull-up': [3, 8],
+  'Chin-up': [3, 8],
+  'Muscle-up': [3, 8],
+  'Handstand Pushup': [3, 8],
+  'Dips': [6, 12],
+  'Bar Pushup': [8, 15],
+  'Diamond Pushup': [8, 15],
+  'Archer Pushup': [8, 15],
+  'Reverse Row': [8, 15],
+  'Australian Row': [8, 15],
+  'Squat': [8, 15],
+  'Pistol Squat': [8, 15],
+  'Bulgarian Split Squat': [8, 15],
+  'L-sit': [5, 12],
+  'Plank': [5, 12],
+};
+const DEFAULT_REP_RANGE = [5, 12];
+function repRangeFor(moveName) {
+  return REP_RANGES[moveName] || DEFAULT_REP_RANGE;
+}
+
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -328,6 +351,73 @@ class Store {
     }
 
     return { hasMaxTest: true, target, readyToRetest, suggestion };
+  }
+
+  // ---- Rep progression insight (range-based double progression) ----
+  // Uses ONLY data.maxTests[moveId] (reps/band/testedAt) and plain session
+  // fields (reps/band/loggedAt), grouped into calendar-day sessions with the
+  // same loggedAt.slice(0,10) convention used elsewhere (groupedHistory,
+  // getPlanStatus). Deliberately never reads session.isMaxTest -- that flag
+  // does not survive pullFromCloud() and must not be depended on.
+  getRepProgressionInsight(moveId) {
+    const move = this.data.moves.find((m) => m.id === moveId);
+    const max = this.data.maxTests[moveId];
+    if (!move || !max || !max.testedAt || typeof max.reps !== 'number' || !Number.isFinite(max.reps)) return null;
+
+    const testedAtMs = new Date(max.testedAt).getTime();
+    if (!Number.isFinite(testedAtMs)) return null;
+
+    const [low, high] = repRangeFor(move.name);
+    const band = max.band || 'none';
+    // The session that established this baseline is logged moments AFTER
+    // testedAt was captured (setMaxTest calls logSession right after), so a
+    // plain "loggedMs <= testedAtMs" check never actually excludes it -- it
+    // would count as an instant, trivial "qualifying day" and bump the
+    // target before any real repeat session. Exclude by calendar day instead
+    // (using the same loggedAt.slice(0,10) convention as elsewhere), which
+    // is robust regardless of exact millisecond ordering within that day.
+    const testedAtDay = max.testedAt.slice(0, 10);
+
+    // Only sessions on the SAME band as the current max are comparable
+    // evidence -- a different band changes the difficulty, so it's excluded
+    // (not counted, not a reset), same rule used elsewhere in this file.
+    const relevant = this.sessionsForMove(moveId).filter((s) => {
+      if (!s || typeof s.reps !== 'number' || !Number.isFinite(s.reps) || !s.loggedAt) return false;
+      const loggedMs = new Date(s.loggedAt).getTime();
+      if (!Number.isFinite(loggedMs) || loggedMs < testedAtMs) return false;
+      if (s.loggedAt.slice(0, 10) === testedAtDay) return false;
+      return (s.band || 'none') === band;
+    });
+
+    const byDay = {};
+    for (const s of relevant) {
+      const day = s.loggedAt.slice(0, 10);
+      (byDay[day] = byDay[day] || []).push(s);
+    }
+    const days = Object.keys(byDay).sort(); // ascending, oldest first
+
+    let target = Math.min(Math.max(max.reps, low), high);
+    let toppedOut = false;
+    let lastSession = null;
+
+    for (const day of days) {
+      const sets = byDay[day].sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt));
+      const allHit = sets.every((s) => s.reps >= target);
+      lastSession = { reps: sets.map((s) => s.reps), allHit };
+      if (allHit) {
+        if (target === high) toppedOut = true;
+        target = Math.min(target + 1, high);
+      }
+    }
+
+    return {
+      hasBaseline: true,
+      range: { low, high },
+      band,
+      nextTarget: target,
+      toppedOut,
+      lastSession,
+    };
   }
 
   needsDeload() {

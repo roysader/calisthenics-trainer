@@ -566,6 +566,18 @@ button {
 /* Progress */
 .progress-section { background: var(--bg-elevated); border-radius: var(--r-lg); padding: 16px; margin-bottom: 12px; }
 
+/* Rep progression insight list (Program tab) */
+.rep-progress-list { margin-top: 4px; }
+.rep-progress-heading { font-size: 13px; font-weight: 600; color: var(--label-secondary); text-transform: uppercase; letter-spacing: 0.02em; margin: 4px 0 8px; }
+.rep-progress-card { background: var(--bg-elevated); border-radius: var(--r-lg); padding: 12px 14px; margin-bottom: 8px; }
+.rep-progress-card.ready { outline: 1px solid var(--blue); }
+.rep-progress-top { display: flex; align-items: center; gap: 6px; font-weight: 590; }
+.rep-progress-name { font-size: 14px; }
+.rep-progress-range { margin-left: auto; font-size: 11px; color: var(--label-tertiary); font-weight: 600; }
+.rep-progress-ready { font-size: 13px; font-weight: 590; color: var(--blue); margin-top: 4px; }
+.rep-progress-bar { height: 4px; border-radius: 2px; background: var(--fill-2); margin-top: 8px; overflow: hidden; }
+.rep-progress-fill { height: 100%; background: var(--blue); }
+
 .day-section {
   border-radius: var(--r-lg);
   margin: 0 0 10px;

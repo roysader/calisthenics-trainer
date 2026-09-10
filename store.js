@@ -369,6 +369,14 @@ class Store {
 
     const [low, high] = repRangeFor(move.name);
     const band = max.band || 'none';
+    // The session that established this baseline is logged moments AFTER
+    // testedAt was captured (setMaxTest calls logSession right after), so a
+    // plain "loggedMs <= testedAtMs" check never actually excludes it -- it
+    // would count as an instant, trivial "qualifying day" and bump the
+    // target before any real repeat session. Exclude by calendar day instead
+    // (using the same loggedAt.slice(0,10) convention as elsewhere), which
+    // is robust regardless of exact millisecond ordering within that day.
+    const testedAtDay = max.testedAt.slice(0, 10);
 
     // Only sessions on the SAME band as the current max are comparable
     // evidence -- a different band changes the difficulty, so it's excluded
@@ -376,7 +384,8 @@ class Store {
     const relevant = this.sessionsForMove(moveId).filter((s) => {
       if (!s || typeof s.reps !== 'number' || !Number.isFinite(s.reps) || !s.loggedAt) return false;
       const loggedMs = new Date(s.loggedAt).getTime();
-      if (!Number.isFinite(loggedMs) || loggedMs <= testedAtMs) return false;
+      if (!Number.isFinite(loggedMs) || loggedMs < testedAtMs) return false;
+      if (s.loggedAt.slice(0, 10) === testedAtDay) return false;
       return (s.band || 'none') === band;
     });
 

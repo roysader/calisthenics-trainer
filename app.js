@@ -5,7 +5,7 @@ let activeTab = 'home';
 let keypadState = null; // { moveId, mode: 'log' | 'maxtest', reps: '', band: 'none' }
 let actionSheetState = null; // { moveId }
 let confirmState = null; // { title, body, confirmLabel, danger, onConfirm }
-let timerState = { remaining: 90, running: false, intervalId: null };
+let timerState = { remaining: 90, running: false, intervalId: null, endAt: null, notified: false };
 let audioCtx = null;
 let dayCollapseState = {}; // dayKey -> expanded boolean, persists across re-renders
 
@@ -541,6 +541,7 @@ function renderTimer() {
     <div class="timer-setting">
       Rest duration: <input type="number" id="t-duration" value="${store.data.settings.restSeconds}" min="10" step="5"> sec
     </div>
+    ${notificationStatusNote()}
   </div>`);
 
   wrap.querySelector('#t-toggle').addEventListener('click', toggleTimer);
@@ -559,44 +560,122 @@ function renderTimer() {
   return wrap;
 }
 
+function notificationStatusNote() {
+  if (!('Notification' in window)) return '';
+  if (Notification.permission === 'denied') {
+    return '<div class="card-sub timer-notify-note">Notifications are blocked — enable them in Settings to get alerted when the app is in the background.</div>';
+  }
+  if (Notification.permission === 'granted') {
+    return '<div class="card-sub timer-notify-note">🔔 You\'ll get a notification when resting in the background.</div>';
+  }
+  return '';
+}
+
 function formatTime(sec) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+// The timer tracks a wall-clock end time (endAt), not just a decrementing
+// counter -- setInterval gets throttled or paused while the app is
+// backgrounded on iOS, but computing remaining time from Date.now() stays
+// correct regardless, and a visibilitychange listener (below) resyncs and
+// fires completion immediately once the app is foregrounded again even if
+// the interval never got to run while hidden.
 function toggleTimer() {
   if (timerState.running) {
+    timerState.remaining = Math.max(0, Math.ceil((timerState.endAt - Date.now()) / 1000));
     clearInterval(timerState.intervalId);
     timerState.running = false;
+    timerState.endAt = null;
   } else {
+    requestNotificationPermission();
     if (timerState.remaining <= 0) timerState.remaining = store.data.settings.restSeconds;
+    timerState.endAt = Date.now() + timerState.remaining * 1000;
     timerState.running = true;
-    timerState.intervalId = setInterval(() => {
-      timerState.remaining -= 1;
-      if (timerState.remaining <= 0) {
-        clearInterval(timerState.intervalId);
-        timerState.running = false;
-        timerState.remaining = 0;
-        playBeep();
-        vibrate();
-      }
-      if (activeTab === 'timer') updateTimerDisplay();
-    }, 1000);
+    timerState.notified = false;
+    timerState.intervalId = setInterval(tickTimer, 1000);
   }
   render();
 }
 
+function tickTimer() {
+  if (!timerState.running) return;
+  const remainingMs = timerState.endAt - Date.now();
+  timerState.remaining = Math.max(0, Math.ceil(remainingMs / 1000));
+  if (remainingMs <= 0) {
+    completeTimer();
+  } else if (activeTab === 'timer') {
+    updateTimerDisplay();
+  }
+}
+
+function completeTimer() {
+  if (timerState.notified) return; // avoid double-firing (interval tick + visibilitychange resync can race)
+  timerState.notified = true;
+  clearInterval(timerState.intervalId);
+  timerState.running = false;
+  timerState.remaining = 0;
+  timerState.endAt = null;
+  playBeep();
+  vibrate();
+  notifyTimerDone();
+  if (activeTab === 'timer') render();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && timerState.running) {
+    tickTimer();
+    if (activeTab === 'timer') render();
+  }
+});
+
 function resetTimer() {
   clearInterval(timerState.intervalId);
   timerState.running = false;
+  timerState.endAt = null;
+  timerState.notified = false;
   timerState.remaining = store.data.settings.restSeconds;
   render();
 }
 
 function adjustTimer(delta) {
-  timerState.remaining = Math.max(0, timerState.remaining + delta);
+  if (timerState.running) {
+    timerState.endAt += delta * 1000;
+    timerState.remaining = Math.max(0, Math.ceil((timerState.endAt - Date.now()) / 1000));
+  } else {
+    timerState.remaining = Math.max(0, timerState.remaining + delta);
+  }
   if (activeTab === 'timer') updateTimerDisplay();
+}
+
+function requestNotificationPermission() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+  }
+}
+
+function notifyTimerDone() {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const opts = {
+    body: 'Time to start your next set.',
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    tag: 'rest-timer',
+    renotify: true,
+    vibrate: [200, 100, 200],
+  };
+  const show = (reg) => {
+    if (reg && reg.showNotification) reg.showNotification('Rest timer done', opts);
+    else new Notification('Rest timer done', opts);
+  };
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistration().then(show).catch(() => show(null));
+  } else {
+    show(null);
+  }
 }
 
 function updateTimerDisplay() {

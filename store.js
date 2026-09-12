@@ -6,7 +6,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const BANDS = {
   none: { label: 'None', kg: 0 },
   blue: { label: 'Blue', kg: 10 },
+  green: { label: 'Green', kg: 15 },
   yellow: { label: 'Yellow', kg: 20 },
+  orange: { label: 'Orange', kg: 25 },
   red: { label: 'Red', kg: 30 },
 };
 
@@ -318,7 +320,7 @@ class Store {
     let suggestion = null;
     if (readyToRetest) {
       if (move.isAssistable && target.basedOnBand && target.basedOnBand !== 'none') {
-        const order = ['red', 'yellow', 'blue', 'none'];
+        const order = ['red', 'orange', 'yellow', 'green', 'blue', 'none'];
         const next = order[order.indexOf(target.basedOnBand) + 1];
         suggestion = next ? `Nailing it — retest with a lighter band (${BANDS[next].label}).` : 'Nailing it — retest unassisted, or add weight.';
       } else if (!move.isAssistable) {

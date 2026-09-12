@@ -13,7 +13,9 @@
   --yellow: #ffd60a;
   --orange: #ff9f0a;
   --band-blue: #0a84ff;
+  --band-green: #32d74b;
   --band-yellow: #ffd60a;
+  --band-orange: #ff9f0a;
   --band-red: #ff453a;
   --r-lg: 14px;
   --r-md: 12px;
@@ -137,9 +139,6 @@ button {
   touch-action: pan-y;
 }
 .move-card:active { background: var(--fill); }
-.move-card.ready {
-  box-shadow: inset 3px 0 0 var(--green);
-}
 .move-card.dragging {
   touch-action: none;
   z-index: 10;
@@ -180,7 +179,6 @@ button {
 .card-more:active { background: var(--fill-2); }
 .card-sub { font-size: 13px; color: var(--label-secondary); margin-top: 6px; display: flex; align-items: center; gap: 5px; }
 .card-target { font-size: 14px; color: var(--blue); font-weight: 590; }
-.card-suggestion { font-size: 13px; color: var(--green); margin-top: 6px; font-weight: 590; }
 
 .progress-track {
   height: 5px;
@@ -204,7 +202,9 @@ button {
   margin-right: 2px;
 }
 .band-dot.band-blue { background: var(--band-blue); }
+.band-dot.band-green { background: var(--band-green); }
 .band-dot.band-yellow { background: var(--band-yellow); }
+.band-dot.band-orange { background: var(--band-orange); }
 .band-dot.band-red { background: var(--band-red); }
 
 .add-move-btn {
@@ -421,7 +421,7 @@ button {
 }
 .band-chips {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   margin-bottom: 18px;
 }
@@ -437,7 +437,9 @@ button {
 }
 .band-chip.band-none { background: var(--fill); color: var(--label); }
 .band-chip.band-blue { background: var(--band-blue); color: #fff; }
+.band-chip.band-green { background: var(--band-green); color: #04240a; }
 .band-chip.band-yellow { background: var(--band-yellow); color: #1a1a00; }
+.band-chip.band-orange { background: var(--band-orange); color: #2b1400; }
 .band-chip.band-red { background: var(--band-red); color: #fff; }
 .band-chip.active {
   border-color: #fff;

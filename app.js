@@ -104,12 +104,9 @@ function renderMoveCard(move) {
     if (recent) {
       body += `<div class="card-sub">Last: ${recent.reps} reps${recent.band !== 'none' ? ` · <span class="band-dot band-${recent.band}"></span>${BANDS[recent.band].label}` : ''} · ${fmtDate(recent.loggedAt)}</div>`;
     }
-    if (status.suggestion) {
-      body += `<div class="card-suggestion">✅ ${status.suggestion}</div>`;
-    }
   }
 
-  const card = el(`<div class="move-card ${status.readyToRetest ? 'ready' : ''}" data-move-id="${move.id}">
+  const card = el(`<div class="move-card" data-move-id="${move.id}">
     <div class="card-title-row">
       <div class="card-title"><span class="move-icon">${moveIcon(move.name)}</span>${move.name}</div>
       <button class="card-more" aria-label="Options">⋯</button>

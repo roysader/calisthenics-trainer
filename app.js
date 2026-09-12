@@ -91,16 +91,24 @@ function renderHome() {
 function renderMoveCard(move) {
   const status = store.getPlanStatus(move.id);
   const recent = store.sessionsForMove(move.id)[0];
+  const progression = store.getSetProgression(move.id);
 
   let body;
   if (!status.hasMaxTest) {
     body = `<div class="card-sub">No max test yet — tap to find your baseline</div>`;
   } else {
     let progressPct = 0;
-    if (recent) progressPct = Math.min(100, Math.round((recent.reps / status.target.reps) * 100));
+    if (progression && recent) progressPct = Math.min(100, Math.round((recent.reps / progression.nextTargets[0]) * 100));
+    else if (recent) progressPct = Math.min(100, Math.round((recent.reps / status.target.reps) * 100));
+    const targetLine = progression
+      ? `Next: ${progression.nextTargets.join(' / ')}`
+      : `Target: ${status.target.reps} reps × ${status.target.sets} sets`;
     body = `
-      <div class="card-target">Target: ${status.target.reps} reps × ${status.target.sets} sets</div>
+      <div class="card-target">${targetLine}</div>
       <div class="progress-track"><div class="progress-fill" style="width:${progressPct}%"></div></div>`;
+    if (progression) {
+      body += `<div class="card-sub">Goal: ${progression.totalTarget} total reps</div>`;
+    }
     if (recent) {
       body += `<div class="card-sub">Last: ${recent.reps} reps${recent.band !== 'none' ? ` · <span class="band-dot band-${recent.band}"></span>${BANDS[recent.band].label}` : ''} · ${fmtDate(recent.loggedAt)}</div>`;
     }

@@ -6,7 +6,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const BANDS = {
   none: { label: 'None', kg: 0 },
   blue: { label: 'Blue', kg: 10 },
+  green: { label: 'Green', kg: 15 },
   yellow: { label: 'Yellow', kg: 20 },
+  orange: { label: 'Orange', kg: 25 },
   red: { label: 'Red', kg: 30 },
 };
 
@@ -84,9 +86,29 @@ class Store {
     if (SUPABASE_CONFIGURED) {
       this.user = await signInAnon();
       if (this.user) await this.pullFromCloud();
+      this.runOneTimeMigrations();
       this.flushQueue();
       window.addEventListener('online', () => this.flushQueue());
+    } else {
+      this.runOneTimeMigrations();
     }
+  }
+
+  // One-off, self-guarding data fixes -- run once (after any cloud pull, so
+  // they operate on the freshest data and their queued fix isn't later
+  // clobbered by pullFromCloud), then never again, so they can't
+  // accidentally re-touch a legitimate future entry that happens to match
+  // the same filter.
+  runOneTimeMigrations() {
+    if (this.data.migratedBlueToGreenSept2026) return;
+    const fixDays = new Set(['2026-09-10', '2026-09-12']); // Thu 10 Sept + Sun 12 Sept
+    for (const s of this.data.sessions) {
+      if (s.band === 'blue' && fixDays.has(s.loggedAt.slice(0, 10))) {
+        this.updateSessionBand(s.id, 'green', { skipEmit: true });
+      }
+    }
+    this.data.migratedBlueToGreenSept2026 = true;
+    this.persist();
   }
 
   onChange(fn) {
@@ -139,6 +161,9 @@ class Store {
       await sb.from('moves').delete().eq('id', op.row.id).eq('user_id', this.user.id);
     } else if (op.table === 'sessions' && op.type === 'delete') {
       await sb.from('sessions').delete().eq('id', op.row.id).eq('user_id', this.user.id);
+    } else if (op.table === 'sessions' && op.type === 'update') {
+      const { id, ...patch } = op.row;
+      await sb.from('sessions').update(patch).eq('id', id).eq('user_id', this.user.id);
     } else if (op.table === 'sessions' && op.type === 'delete_for_move') {
       await sb.from('sessions').delete().eq('move_id', op.row.move_id).eq('user_id', this.user.id);
     } else if (op.table === 'max_tests' && op.type === 'delete_for_move') {
@@ -249,6 +274,17 @@ class Store {
     this.emit();
   }
 
+  // Corrects the band on an already-logged set (e.g. it was logged before a
+  // band existed as an option, or was picked wrong) without deleting and
+  // re-adding it -- keeps the original date/order intact.
+  updateSessionBand(sessionId, band, { skipEmit = false } = {}) {
+    const session = this.data.sessions.find((s) => s.id === sessionId);
+    if (!session) return;
+    session.band = band;
+    this.queue({ table: 'sessions', type: 'update', row: { id: sessionId, band } });
+    if (!skipEmit) this.emit();
+  }
+
   sessionsForMove(moveId) {
     return this.data.sessions.filter((s) => s.moveId === moveId).sort((a, b) => new Date(b.loggedAt) - new Date(a.loggedAt));
   }
@@ -318,7 +354,7 @@ class Store {
     let suggestion = null;
     if (readyToRetest) {
       if (move.isAssistable && target.basedOnBand && target.basedOnBand !== 'none') {
-        const order = ['red', 'yellow', 'blue', 'none'];
+        const order = ['red', 'orange', 'yellow', 'green', 'blue', 'none'];
         const next = order[order.indexOf(target.basedOnBand) + 1];
         suggestion = next ? `Nailing it — retest with a lighter band (${BANDS[next].label}).` : 'Nailing it — retest unassisted, or add weight.';
       } else if (!move.isAssistable) {

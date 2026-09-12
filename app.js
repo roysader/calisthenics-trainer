@@ -542,6 +542,10 @@ function renderTimer() {
       Rest duration: <input type="number" id="t-duration" value="${store.data.settings.restSeconds}" min="10" step="5"> sec
     </div>
     ${notificationStatusNote()}
+    <div class="data-backup">
+      <div class="card-sub">Save a backup of all your moves, sets, and max tests to a file on this device.</div>
+      <button class="export-btn" id="t-export">Export Backup</button>
+    </div>
   </div>`);
 
   wrap.querySelector('#t-toggle').addEventListener('click', toggleTimer);
@@ -556,8 +560,32 @@ function renderTimer() {
       render();
     }
   });
+  wrap.querySelector('#t-export').addEventListener('click', exportBackup);
 
   return wrap;
+}
+
+// Downloads a JSON snapshot of everything the app tracks (moves, sessions,
+// max tests, settings) -- a local backup independent of Supabase entirely,
+// so a sync/auth issue can never be the only copy of this data.
+function exportBackup() {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    moves: store.data.moves,
+    moveOrder: store.data.moveOrder,
+    maxTests: store.data.maxTests,
+    sessions: store.data.sessions,
+    settings: store.data.settings,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `calisthenics-backup-${payload.exportedAt.slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function notificationStatusNote() {

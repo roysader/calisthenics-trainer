@@ -88,6 +88,26 @@ function renderHome() {
   return wrap;
 }
 
+function bandDotHtml(band) {
+  return band !== 'none' ? `<span class="band-dot band-${band}"></span>` : '';
+}
+
+function bandDisplayLabel(band) {
+  return band !== 'none' ? BANDS[band].label : 'Unassisted';
+}
+
+// Renders a move's per-set targets as "4 / 6🟢 / 5🟢" (a colored dot next to
+// any assisted number, none for unassisted), with a badge for a set that
+// just hit a new max or is ready to try a lighter band.
+function formatSlotTargets(slots) {
+  return slots
+    .map((s) => {
+      const badge = s.isNewMax ? ' 🔥' : s.readyToSwitchBand ? ' 🎗️' : '';
+      return `${bandDotHtml(s.band)}${s.reps}${badge}`;
+    })
+    .join(' / ');
+}
+
 function renderMoveCard(move) {
   const status = store.getPlanStatus(move.id);
   const recent = store.sessionsForMove(move.id)[0];
@@ -98,10 +118,10 @@ function renderMoveCard(move) {
     body = `<div class="card-sub">No max test yet — tap to find your baseline</div>`;
   } else {
     let progressPct = 0;
-    if (progression && recent) progressPct = Math.min(100, Math.round((recent.reps / progression.nextTargets[0]) * 100));
+    if (progression && recent) progressPct = Math.min(100, Math.round((recent.reps / progression.slots[0].reps) * 100));
     else if (recent) progressPct = Math.min(100, Math.round((recent.reps / status.target.reps) * 100));
     const targetLine = progression
-      ? `Next: ${progression.nextTargets.join(' / ')}`
+      ? `Next: ${formatSlotTargets(progression.slots)}`
       : `Target: ${status.target.reps} reps × ${status.target.sets} sets`;
     body = `
       <div class="card-target">${targetLine}</div>
@@ -186,37 +206,35 @@ function renderRepProgressList() {
   return any ? wrap : null;
 }
 
-function bandDisplayLabel(band) {
-  return band !== 'none' ? BANDS[band].label : 'Unassisted';
-}
-
 function renderSetProgressionCard(move, insight) {
-  const { band, nextTargets, totalTarget, lastSession, volumeDelta, readyForNewMax, readyToSwitchBand, nextBand, newMaxCount } = insight;
-  const bandLabel = bandDisplayLabel(band);
-  const recap = `<div class="card-sub">Last session: ${lastSession.reps.join(', ')} — ${lastSession.total} total</div>`;
+  const { slots, totalTarget, lastSession, volumeDelta } = insight;
+  const recap = `<div class="card-sub">Last session: ${lastSession.sets.map((s) => `${bandDotHtml(s.band)}${s.reps}`).join(', ')} — ${lastSession.total} total</div>`;
   const deltaNote = volumeDelta === null || volumeDelta === 0
     ? ''
     : `<div class="card-sub rep-progress-delta">${volumeDelta > 0 ? '+' : ''}${volumeDelta} total reps from last time</div>`;
-  const readyNote = readyForNewMax
-    ? `<div class="rep-progress-ready">🔥 Ready to try ${nextTargets[0]} clean reps on Set 1!</div>`
-    : '';
-  const nextBandLabel = nextBand ? bandDisplayLabel(nextBand) : null;
-  const switchBandNote = readyToSwitchBand
-    ? `<div class="rep-progress-ready">🎗️ Ready to try ${nextBandLabel} — you've grown your ${bandLabel} max ${newMaxCount} times. Just log your next set on ${nextBandLabel} to start there.</div>`
-    : '';
 
-  return el(`<div class="rep-progress-card ${readyForNewMax || readyToSwitchBand ? 'ready' : ''}">
+  // Group any sets ready to switch bands by their suggested next band, so
+  // e.g. "Set 2/3: ready to try Yellow" shows once rather than per-set.
+  const byNextBand = {};
+  slots.forEach((s, i) => {
+    if (s.readyToSwitchBand) (byNextBand[s.nextBand] = byNextBand[s.nextBand] || []).push(i + 1);
+  });
+  const switchNotes = Object.keys(byNextBand)
+    .map((nextBand) => `<div class="rep-progress-ready">🎗️ Set ${byNextBand[nextBand].join('/')}: ready to try ${bandDisplayLabel(nextBand)}</div>`)
+    .join('');
+
+  const anyReady = slots.some((s) => s.isNewMax || s.readyToSwitchBand);
+
+  return el(`<div class="rep-progress-card ${anyReady ? 'ready' : ''}">
     <div class="rep-progress-top">
       <span class="move-icon">${moveIcon(move.name)}</span>
       <span class="rep-progress-name">${move.name}</span>
-      <span class="rep-progress-band">${bandLabel}</span>
     </div>
     ${recap}
-    ${readyNote}
-    ${switchBandNote}
-    <div class="card-target">Next: ${nextTargets.join(' / ')}</div>
+    <div class="card-target">Next: ${formatSlotTargets(slots)}</div>
     <div class="card-sub">Goal: ${totalTarget} total reps</div>
     ${deltaNote}
+    ${switchNotes}
   </div>`);
 }
 

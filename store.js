@@ -387,7 +387,17 @@ class Store {
     if (!validSessions.length) return null;
 
     const band = validSessions[0].band || 'none'; // most recent (sessionsForMove is desc)
-    const bandSessions = validSessions.filter((s) => (s.band || 'none') === band);
+    // Only the CURRENT contiguous stint on this band -- validSessions is
+    // sorted most-recent-first, so this stops at the first (going backward)
+    // session on a different band. Without this, returning to a band you'd
+    // already mastered earlier (e.g. testing an old band, then moving on)
+    // would pull in that old history wholesale and could instantly re-fire
+    // "ready to switch" using stale, already-acted-on milestones.
+    const bandSessions = [];
+    for (const s of validSessions) {
+      if ((s.band || 'none') !== band) break;
+      bandSessions.push(s);
+    }
 
     const byDay = {};
     for (const s of bandSessions) {

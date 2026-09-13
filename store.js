@@ -386,127 +386,129 @@ class Store {
     );
     if (!validSessions.length) return null;
 
-    const band = validSessions[0].band || 'none'; // most recent (sessionsForMove is desc)
-    // Only the CURRENT contiguous stint on this band -- validSessions is
-    // sorted most-recent-first, so this stops at the first (going backward)
-    // session on a different band. Without this, returning to a band you'd
-    // already mastered earlier (e.g. testing an old band, then moving on)
-    // would pull in that old history wholesale and could instantly re-fire
-    // "ready to switch" using stale, already-acted-on milestones.
-    const bandSessions = [];
-    for (const s of validSessions) {
-      if ((s.band || 'none') !== band) break;
-      bandSessions.push(s);
-    }
-
     const byDay = {};
-    for (const s of bandSessions) {
+    for (const s of validSessions) {
       const day = s.loggedAt.slice(0, 10);
       (byDay[day] = byDay[day] || []).push(s);
     }
     const days = Object.keys(byDay).sort(); // ascending, oldest first
 
-    let setTargets = null;
-    let missStreaks = null;
+    // Each set POSITION (not the move as a whole) tracks its own target,
+    // band, miss streak, and new-max count -- e.g. Set 1 may stay unassisted
+    // indefinitely while Sets 2/3 use a band, and that pattern can shift
+    // over time. `slots[i]` mirrors the i-th set logged on a given day
+    // (chronological order within that day), same positional convention as
+    // before, just generalized from one shared band to one per position.
+    let slots = [];
     let lastDayTotal = null;
     let prevDayTotal = null;
-    let readyForNewMax = false;
-    let newMaxCount = 0;
+    let lastDaySets = null;
 
     for (const day of days) {
       const daySets = byDay[day]
         .sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt))
-        .map((s) => s.reps);
-      const dayTotal = daySets.reduce((a, b) => a + b, 0);
+        .map((s) => ({ reps: s.reps, band: s.band || 'none' }));
+      const dayTotal = daySets.reduce((sum, s) => sum + s.reps, 0);
       prevDayTotal = lastDayTotal;
       lastDayTotal = dayTotal;
+      lastDaySets = daySets;
 
-      if (setTargets === null) {
-        // First day on this band: the baseline IS whatever was actually
-        // performed -- no guessed starting formula.
-        setTargets = daySets.slice();
-        missStreaks = setTargets.map(() => 0);
-        continue;
-      }
+      for (const slot of slots) slot.isNewMax = false; // transient, recomputed fresh each day
 
-      // Match by index; extra sets today become new target slots, missing
-      // sets are simply not evaluated (not treated as a failure).
-      while (setTargets.length < daySets.length) {
-        setTargets.push(daySets[setTargets.length]);
-        missStreaks.push(0);
-      }
-
-      const attempted = daySets.length;
-      const hits = [];
-      for (let i = 0; i < attempted; i++) hits.push(daySets[i] >= setTargets[i]);
-      const allHit = attempted >= setTargets.length && hits.every(Boolean);
-
-      readyForNewMax = false;
-      const prevSet1 = setTargets[0];
-
-      if (allHit) {
-        // Trigger on TODAY'S actual performance being uniform across every
-        // set (e.g. 4,4,4), not on the stored target array having been
-        // uniform beforehand -- a single clean, even session at the current
-        // ceiling is itself the signal to attempt a new max, with no extra
-        // confirmation day required (matches "achieve 4/4/4 once -> next
-        // becomes 5/4/3", not "achieve it on two separate days").
-        const actualIsUniform = attempted === setTargets.length && daySets.every((r) => r === daySets[0]);
-        if (actualIsUniform) {
-          // Attempt a new max: bump set 1 and re-seed the rest as a fresh
-          // descending pattern (a new max rep is fatiguing, so the
-          // following sets naturally can't hold the old ceiling either).
-          const newMax = Math.max(setTargets[0], daySets[0]) + 1;
-          setTargets = setTargets.map((_, i) => Math.max(1, newMax - i));
-          missStreaks = setTargets.map(() => 0);
-          newMaxCount += 1;
-        } else if (setTargets.length > 1) {
-          // Strengthen the weakest non-first set (ties broken toward the
-          // earliest index) -- build up the weakest link before pushing an
-          // already-strong set further.
-          let weakestIdx = 1;
-          for (let i = 2; i < setTargets.length; i++) {
-            if (setTargets[i] < setTargets[weakestIdx]) weakestIdx = i;
-          }
-          setTargets[weakestIdx] += 1;
-          missStreaks[weakestIdx] = 0;
+      // A position that's new, or whose band today differs from what it was
+      // last tracked at, gets a fresh baseline on today's band (like day 1
+      // for that slot) -- no hit/miss evaluation for it this round. This is
+      // the per-slot equivalent of the whole-move "band changed -> excluded,
+      // not a reset" rule, and also resets that slot's own new-max count,
+      // consistent with the stint-reset fix for the whole-move version.
+      const seededToday = [];
+      for (let i = 0; i < daySets.length; i++) {
+        const existing = slots[i];
+        if (!existing || existing.band !== daySets[i].band) {
+          slots[i] = { target: daySets[i].reps, band: daySets[i].band, missStreak: 0, newMaxCount: 0, isNewMax: false };
+          seededToday[i] = true;
+        } else {
+          seededToday[i] = false;
         }
-        readyForNewMax = setTargets[0] > prevSet1;
-      } else {
-        // A miss: give it another attempt. Only reduce a specific set after
-        // 3 consecutive misses on that same set, and never all at once.
-        for (let i = 0; i < attempted; i++) {
-          if (hits[i]) {
-            missStreaks[i] = 0;
-          } else {
-            missStreaks[i] += 1;
-            if (missStreaks[i] >= 3) {
-              setTargets[i] = Math.max(1, setTargets[i] - 1);
-              missStreaks[i] = 0;
+      }
+
+      // Group today's EVALUABLE positions (existing, not just seeded) by
+      // their current band -- e.g. Set 1 (unassisted) forms its own
+      // single-position group, Sets 2/3 (same band) form another. Each
+      // group runs the same weakest-link/new-max logic as before, scoped to
+      // its own members, using its lowest-index member as the reference
+      // ("Set 1" of that group) instead of always the move's overall Set 1.
+      const groups = {};
+      for (let i = 0; i < daySets.length; i++) {
+        if (seededToday[i]) continue;
+        (groups[slots[i].band] = groups[slots[i].band] || []).push(i);
+      }
+
+      for (const band of Object.keys(groups)) {
+        const indices = groups[band]; // ascending, built in index order
+        const leader = indices[0];
+        const hits = indices.map((i) => daySets[i].reps >= slots[i].target);
+        const allHit = hits.every(Boolean);
+
+        if (allHit) {
+          // Same "today's actual is uniform" trigger as before, scoped to
+          // this group -- a solo group (e.g. a standalone Set 1) is
+          // trivially uniform whenever hit, so it climbs by 1 every clean
+          // session, matching how a true top single-set naturally
+          // progresses.
+          const actualVals = indices.map((i) => daySets[i].reps);
+          const uniform = actualVals.every((v) => v === actualVals[0]);
+          if (uniform) {
+            const newMax = Math.max(slots[leader].target, actualVals[0]) + 1;
+            indices.forEach((i, rel) => {
+              slots[i].target = Math.max(1, newMax - rel);
+              slots[i].missStreak = 0;
+              slots[i].newMaxCount += 1;
+              slots[i].isNewMax = true;
+            });
+          } else if (indices.length > 1) {
+            let weakestPos = indices[1];
+            for (let k = 2; k < indices.length; k++) {
+              if (slots[indices[k]].target < slots[weakestPos].target) weakestPos = indices[k];
+            }
+            slots[weakestPos].target += 1;
+            slots[weakestPos].missStreak = 0;
+          }
+        } else {
+          for (const i of indices) {
+            const hit = daySets[i].reps >= slots[i].target;
+            if (hit) {
+              slots[i].missStreak = 0;
+            } else {
+              slots[i].missStreak += 1;
+              if (slots[i].missStreak >= 3) {
+                slots[i].target = Math.max(1, slots[i].target - 1);
+                slots[i].missStreak = 0;
+              }
             }
           }
         }
       }
     }
 
-    const lastDay = days[days.length - 1];
-    const lastReps = byDay[lastDay]
-      .sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt))
-      .map((s) => s.reps);
-
-    const nextBand = BAND_PROGRESSION_ORDER[BAND_PROGRESSION_ORDER.indexOf(band) + 1] || null;
+    const resultSlots = slots.map((s) => {
+      const nextBand = BAND_PROGRESSION_ORDER[BAND_PROGRESSION_ORDER.indexOf(s.band) + 1] || null;
+      return {
+        reps: s.target,
+        band: s.band,
+        isNewMax: s.isNewMax,
+        newMaxCount: s.newMaxCount,
+        readyToSwitchBand: s.newMaxCount >= NEW_MAX_COUNT_TO_SWITCH_BAND && !!nextBand,
+        nextBand,
+      };
+    });
 
     return {
       hasHistory: true,
-      band,
-      nextTargets: setTargets,
-      totalTarget: setTargets.reduce((a, b) => a + b, 0),
-      lastSession: { reps: lastReps, total: lastDayTotal },
+      slots: resultSlots,
+      totalTarget: resultSlots.reduce((sum, s) => sum + s.reps, 0),
+      lastSession: { sets: lastDaySets, total: lastDayTotal },
       volumeDelta: prevDayTotal === null ? null : lastDayTotal - prevDayTotal,
-      readyForNewMax,
-      newMaxCount,
-      readyToSwitchBand: newMaxCount >= NEW_MAX_COUNT_TO_SWITCH_BAND && !!nextBand,
-      nextBand,
     };
   }
 

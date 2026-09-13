@@ -186,9 +186,13 @@ function renderRepProgressList() {
   return any ? wrap : null;
 }
 
+function bandDisplayLabel(band) {
+  return band !== 'none' ? BANDS[band].label : 'Unassisted';
+}
+
 function renderSetProgressionCard(move, insight) {
-  const { band, nextTargets, totalTarget, lastSession, volumeDelta, readyForNewMax } = insight;
-  const bandLabel = band !== 'none' ? BANDS[band].label : 'Unassisted';
+  const { band, nextTargets, totalTarget, lastSession, volumeDelta, readyForNewMax, readyToSwitchBand, nextBand, newMaxCount } = insight;
+  const bandLabel = bandDisplayLabel(band);
   const recap = `<div class="card-sub">Last session: ${lastSession.reps.join(', ')} — ${lastSession.total} total</div>`;
   const deltaNote = volumeDelta === null || volumeDelta === 0
     ? ''
@@ -196,8 +200,12 @@ function renderSetProgressionCard(move, insight) {
   const readyNote = readyForNewMax
     ? `<div class="rep-progress-ready">🔥 Ready to try ${nextTargets[0]} clean reps on Set 1!</div>`
     : '';
+  const nextBandLabel = nextBand ? bandDisplayLabel(nextBand) : null;
+  const switchBandNote = readyToSwitchBand
+    ? `<div class="rep-progress-ready">🎗️ Ready to try ${nextBandLabel} — you've grown your ${bandLabel} max ${newMaxCount} times. Just log your next set on ${nextBandLabel} to start there.</div>`
+    : '';
 
-  return el(`<div class="rep-progress-card ${readyForNewMax ? 'ready' : ''}">
+  return el(`<div class="rep-progress-card ${readyForNewMax || readyToSwitchBand ? 'ready' : ''}">
     <div class="rep-progress-top">
       <span class="move-icon">${moveIcon(move.name)}</span>
       <span class="rep-progress-name">${move.name}</span>
@@ -205,6 +213,7 @@ function renderSetProgressionCard(move, insight) {
     </div>
     ${recap}
     ${readyNote}
+    ${switchBandNote}
     <div class="card-target">Next: ${nextTargets.join(' / ')}</div>
     <div class="card-sub">Goal: ${totalTarget} total reps</div>
     ${deltaNote}

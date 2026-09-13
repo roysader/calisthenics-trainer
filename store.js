@@ -38,6 +38,10 @@ const DEFAULT_MOVE_NAMES = ['Reverse Row', 'Dips', 'Wide Pull-up', 'Pull-up', 'B
 export const FOCUS_MOVE_NAME = 'Wide Pull-up';
 const ACCESSORY_MOVE_NAMES = ['Pull-up', 'Chin-up', 'Reverse Row', 'Australian Row'];
 
+// Heaviest assistance -> lightest -> fully unassisted, by kg descending.
+const BAND_PROGRESSION_ORDER = ['red', 'orange', 'yellow', 'green', 'blue', 'none'];
+const NEW_MAX_COUNT_TO_SWITCH_BAND = 3;
+
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -354,8 +358,7 @@ class Store {
     let suggestion = null;
     if (readyToRetest) {
       if (move.isAssistable && target.basedOnBand && target.basedOnBand !== 'none') {
-        const order = ['red', 'orange', 'yellow', 'green', 'blue', 'none'];
-        const next = order[order.indexOf(target.basedOnBand) + 1];
+        const next = BAND_PROGRESSION_ORDER[BAND_PROGRESSION_ORDER.indexOf(target.basedOnBand) + 1];
         suggestion = next ? `Nailing it — retest with a lighter band (${BANDS[next].label}).` : 'Nailing it — retest unassisted, or add weight.';
       } else if (!move.isAssistable) {
         suggestion = 'Nailing it — retest, try a harder variation, or add weight.';
@@ -398,6 +401,7 @@ class Store {
     let lastDayTotal = null;
     let prevDayTotal = null;
     let readyForNewMax = false;
+    let newMaxCount = 0;
 
     for (const day of days) {
       const daySets = byDay[day]
@@ -445,6 +449,7 @@ class Store {
           const newMax = Math.max(setTargets[0], daySets[0]) + 1;
           setTargets = setTargets.map((_, i) => Math.max(1, newMax - i));
           missStreaks = setTargets.map(() => 0);
+          newMaxCount += 1;
         } else if (setTargets.length > 1) {
           // Strengthen the weakest non-first set (ties broken toward the
           // earliest index) -- build up the weakest link before pushing an
@@ -479,6 +484,8 @@ class Store {
       .sort((a, b) => new Date(a.loggedAt) - new Date(b.loggedAt))
       .map((s) => s.reps);
 
+    const nextBand = BAND_PROGRESSION_ORDER[BAND_PROGRESSION_ORDER.indexOf(band) + 1] || null;
+
     return {
       hasHistory: true,
       band,
@@ -487,6 +494,9 @@ class Store {
       lastSession: { reps: lastReps, total: lastDayTotal },
       volumeDelta: prevDayTotal === null ? null : lastDayTotal - prevDayTotal,
       readyForNewMax,
+      newMaxCount,
+      readyToSwitchBand: newMaxCount >= NEW_MAX_COUNT_TO_SWITCH_BAND && !!nextBand,
+      nextBand,
     };
   }
 

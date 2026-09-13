@@ -475,9 +475,8 @@ class Store {
             slots[weakestPos].missStreak = 0;
           }
         } else {
-          for (const i of indices) {
-            const hit = daySets[i].reps >= slots[i].target;
-            if (hit) {
+          indices.forEach((i, k) => {
+            if (hits[k]) {
               slots[i].missStreak = 0;
             } else {
               slots[i].missStreak += 1;
@@ -486,7 +485,7 @@ class Store {
                 slots[i].missStreak = 0;
               }
             }
-          }
+          });
         }
       }
     }
